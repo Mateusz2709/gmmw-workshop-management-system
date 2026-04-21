@@ -1,0 +1,344 @@
+﻿@page "/admin/users/roles/{UserId}"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize(Roles = "SuperUser")]
+@inject IUserAdminService UserAdminService
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>@(string.IsNullOrWhiteSpace(FormModel.UserId) ? "Manage Roles" : $"Manage Roles - {FormModel.FullName}")</PageTitle>
+
+<div class="row">
+    <div class="col-12 col-xl-10 col-xxl-8">
+        <div class="st-stack-lg">
+            <div class="st-page-header">
+                <div class="st-page-header__copy">
+                    <h1 class="st-page-title">
+                        @(string.IsNullOrWhiteSpace(FormModel.UserId) ? "Manage Roles" : $"Manage Roles - {FormModel.FullName}")
+                    </h1>
+                    <p class="st-page-subtitle">
+                        Review and update the selected internal user’s role assignments.
+                    </p>
+                </div>
+
+                <div class="st-page-actions">
+                    <a href="/admin" class="st-btn st-btn--secondary">Back to Users</a>
+                </div>
+            </div>
+
+            @if (isLoading)
+            {
+                <div class="st-card">
+                    <div class="st-card__body">
+                        <div class="st-alert st-alert--info mb-0" role="status">
+                            Loading user role details...
+                        </div>
+                    </div>
+                </div>
+            }
+            else if (!string.IsNullOrWhiteSpace(notFoundMessage))
+            {
+                <div class="st-card">
+                    <div class="st-card__body">
+                        <div class="st-alert st-alert--warning mb-0" role="alert">
+                            @notFoundMessage
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <EditForm Model="FormModel" OnValidSubmit="HandleValidSubmit" FormName="UserRolesEdit">
+                    <DataAnnotationsValidator />
+
+                    <div class="st-card st-card--allow-overflow">
+                        <div class="st-card__header">
+                            <div>
+                                <h2 class="st-card-title">Role Assignment</h2>
+                                <p class="st-card-subtitle">
+                                    Control whether this user has workshop access, admin access, or both.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-card__body">
+                            @if (!string.IsNullOrWhiteSpace(errorMessage))
+                            {
+                                <div class="st-alert st-alert--danger mb-3" role="alert" aria-live="polite">
+                                    @errorMessage
+                                </div>
+                            }
+
+                            <div class="st-selected-summary mb-4">
+                                <div class="st-selected-summary__title">@FormModel.FullName</div>
+                                <div class="st-selected-summary__meta">@FormModel.Email</div>
+                            </div>
+
+                            <fieldset disabled="@isSaving" aria-busy="@isSaving">
+                                <div class="row g-4">
+                                    <div class="col-12 col-md-6">
+                                        <div class="st-field mb-0">
+                                            <label for="workshop-user-role-trigger" class="st-label">WorkshopUser Role</label>
+
+                                            <div class="st-dropdown">
+                                                <button id="workshop-user-role-trigger"
+                                                        type="button"
+                                                        class="st-select st-dropdown__trigger"
+                                                        @onclick="ToggleWorkshopUserDropdown"
+                                                        aria-expanded="@isWorkshopUserDropdownOpen"
+                                                        aria-haspopup="listbox">
+                                                    <span>@SelectedWorkshopUserText</span>
+                                                    <span class="st-dropdown__chevron">▾</span>
+                                                </button>
+
+                                                @if (isWorkshopUserDropdownOpen)
+                                                {
+                                                    <button type="button"
+                                                            class="st-dropdown__backdrop"
+                                                            @onclick="CloseWorkshopUserDropdown"
+                                                            aria-label="Close WorkshopUser role menu"></button>
+
+                                                    <div class="st-dropdown__menu"
+                                                         role="listbox"
+                                                         aria-labelledby="workshop-user-role-trigger">
+                                                        <button type="button"
+                                                                class="st-dropdown__item"
+                                                                @onclick="() => SelectWorkshopUserRole(true)">
+                                                            Assigned
+                                                        </button>
+
+                                                        <button type="button"
+                                                                class="st-dropdown__item"
+                                                                @onclick="() => SelectWorkshopUserRole(false)">
+                                                            Not Assigned
+                                                        </button>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12 col-md-6">
+                                        <div class="st-field mb-0">
+                                            <label for="super-user-role-trigger" class="st-label">SuperUser Role</label>
+
+                                            <div class="st-dropdown">
+                                                <button id="super-user-role-trigger"
+                                                        type="button"
+                                                        class="st-select st-dropdown__trigger"
+                                                        @onclick="ToggleSuperUserDropdown"
+                                                        aria-expanded="@isSuperUserDropdownOpen"
+                                                        aria-haspopup="listbox">
+                                                    <span>@SelectedSuperUserText</span>
+                                                    <span class="st-dropdown__chevron">▾</span>
+                                                </button>
+
+                                                @if (isSuperUserDropdownOpen)
+                                                {
+                                                    <button type="button"
+                                                            class="st-dropdown__backdrop"
+                                                            @onclick="CloseSuperUserDropdown"
+                                                            aria-label="Close SuperUser role menu"></button>
+
+                                                    <div class="st-dropdown__menu"
+                                                         role="listbox"
+                                                         aria-labelledby="super-user-role-trigger">
+                                                        <button type="button"
+                                                                class="st-dropdown__item"
+                                                                @onclick="() => SelectSuperUserRole(true)">
+                                                            Assigned
+                                                        </button>
+
+                                                        <button type="button"
+                                                                class="st-dropdown__item"
+                                                                @onclick="() => SelectSuperUserRole(false)">
+                                                            Not Assigned
+                                                        </button>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                                <button type="submit" class="st-btn st-btn--primary" disabled="@isSaving">
+                                    @(isSaving ? "Saving Changes..." : "Save Changes")
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </EditForm>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // Gets the selected user ID from the route.
+    [Parameter]
+    public string UserId { get; set; } = string.Empty;
+
+    // Stores the posted form values for the role-edit page.
+    [SupplyParameterFromForm(FormName = "UserRolesEdit")]
+    private UserRolesEditViewModel? model { get; set; }
+
+    // Always provides a safe non-null model instance for rendering and form binding.
+    private UserRolesEditViewModel FormModel => model ??= new();
+
+    // Stores service or unexpected errors shown above the form.
+    private string? errorMessage;
+
+    // Stores the not-found message when the requested user does not exist.
+    private string? notFoundMessage;
+
+    // Controls the loading state while the page fetches the selected user.
+    private bool isLoading = true;
+
+    // Prevents duplicate submits while saving.
+    private bool isSaving;
+
+    // Controls the custom WorkshopUser dropdown state.
+    private bool isWorkshopUserDropdownOpen;
+
+    // Controls the custom SuperUser dropdown state.
+    private bool isSuperUserDropdownOpen;
+
+    // Shows the current WorkshopUser selection in the dropdown trigger.
+    private string SelectedWorkshopUserText => FormModel.IsWorkshopUser ? "Assigned" : "Not Assigned";
+
+    // Shows the current SuperUser selection in the dropdown trigger.
+    private string SelectedSuperUserText => FormModel.IsSuperUser ? "Assigned" : "Not Assigned";
+
+    // Reloads the user data whenever the route parameter changes.
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadUserAsync();
+    }
+
+    // Loads the selected user's current role data for editing.
+    private async Task LoadUserAsync()
+    {
+        errorMessage = null;
+        notFoundMessage = null;
+        isLoading = true;
+        isWorkshopUserDropdownOpen = false;
+        isSuperUserDropdownOpen = false;
+
+        model = new UserRolesEditViewModel();
+
+        try
+        {
+            var loadedModel = await UserAdminService.GetUserRolesByIdAsync(UserId);
+
+            if (loadedModel is null)
+            {
+                notFoundMessage = "The requested user could not be found.";
+                return;
+            }
+
+            FormModel.UserId = loadedModel.UserId;
+            FormModel.FullName = loadedModel.FullName;
+            FormModel.Email = loadedModel.Email;
+            FormModel.IsWorkshopUser = loadedModel.IsWorkshopUser;
+            FormModel.IsSuperUser = loadedModel.IsSuperUser;
+        }
+        catch
+        {
+            errorMessage = "Something went wrong while loading the user roles.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    // Opens or closes the WorkshopUser dropdown.
+    private void ToggleWorkshopUserDropdown()
+    {
+        isWorkshopUserDropdownOpen = !isWorkshopUserDropdownOpen;
+        isSuperUserDropdownOpen = false;
+    }
+
+    // Applies the WorkshopUser selection and closes the dropdown.
+    private void SelectWorkshopUserRole(bool isAssigned)
+    {
+        FormModel.IsWorkshopUser = isAssigned;
+        isWorkshopUserDropdownOpen = false;
+    }
+
+    // Closes the WorkshopUser dropdown when the backdrop is clicked.
+    private void CloseWorkshopUserDropdown()
+    {
+        isWorkshopUserDropdownOpen = false;
+    }
+
+    // Opens or closes the SuperUser dropdown.
+    private void ToggleSuperUserDropdown()
+    {
+        isSuperUserDropdownOpen = !isSuperUserDropdownOpen;
+        isWorkshopUserDropdownOpen = false;
+    }
+
+    // Applies the SuperUser selection and closes the dropdown.
+    private void SelectSuperUserRole(bool isAssigned)
+    {
+        FormModel.IsSuperUser = isAssigned;
+        isSuperUserDropdownOpen = false;
+    }
+
+    // Closes the SuperUser dropdown when the backdrop is clicked.
+    private void CloseSuperUserDropdown()
+    {
+        isSuperUserDropdownOpen = false;
+    }
+
+    // Saves the updated role assignments.
+    private async Task HandleValidSubmit()
+    {
+        if (isSaving)
+        {
+            return;
+        }
+
+        errorMessage = null;
+        isWorkshopUserDropdownOpen = false;
+        isSuperUserDropdownOpen = false;
+        isSaving = true;
+
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var currentUserId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrWhiteSpace(currentUserId))
+            {
+                errorMessage = "The current signed-in user could not be identified.";
+                return;
+            }
+
+            await UserAdminService.UpdateUserRolesAsync(FormModel, currentUserId);
+
+            NavigationManager.NavigateTo("/admin");
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+            await LoadUserAsync();
+        }
+        catch
+        {
+            errorMessage = "Something went wrong while updating the user roles.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

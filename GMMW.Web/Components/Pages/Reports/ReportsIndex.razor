@@ -1,0 +1,174 @@
+﻿@page "/reports"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+
+<PageTitle>Reports</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Reports</h1>
+            <p class="st-page-subtitle">
+                Choose a workshop report to review attendance activity, volunteer repair time, monthly repair summaries, parts usage, and class delivery information.
+            </p>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-12 col-md-6 col-xl-4">
+            <div class="st-card h-100">
+                <div class="st-card__body">
+                    <div class="d-flex flex-column gap-2">
+                        <span class="st-label mb-0">Available Reports</span>
+                        <div class="fs-2 fw-bold">@ReportCount</div>
+                        <p class="st-page-subtitle mb-0">
+                            Reporting views currently available in the system.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-xl-4">
+            <div class="st-card h-100">
+                <div class="st-card__body">
+                    <div class="d-flex flex-column gap-2">
+                        <span class="st-label mb-0">Coverage</span>
+                        <div class="fs-4 fw-semibold">Repairs, Parts, Classes</div>
+                        <p class="st-page-subtitle mb-0">
+                            Reports cover the main workshop operational areas already implemented in the system.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-4">
+            <div class="st-card h-100">
+                <div class="st-card__body">
+                    <div class="d-flex flex-column gap-2">
+                        <span class="st-label mb-0">Use</span>
+                        <div class="fs-4 fw-semibold">Open a report below</div>
+                        <p class="st-page-subtitle mb-0">
+                            Each report opens in its own page with filters and a dedicated results view.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Available Reports</h2>
+                <p class="st-card-subtitle">
+                    Open one of the available reporting views below.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="row g-4">
+                @foreach (var report in reports)
+                {
+                    <div class="col-12 col-lg-6 col-xxl-4">
+                        <div class="st-card h-100">
+                            <div class="st-card__header">
+                                <div>
+                                    <h3 class="st-card-title mb-2">@report.Title</h3>
+                                    <p class="st-card-subtitle mb-0">
+                                        @report.Description
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="st-card__body d-flex flex-column">
+                                <div class="d-flex justify-content-end mt-auto pt-4 border-top">
+                                    <a href="@report.Href" class="st-btn st-btn--primary">
+                                        @report.ButtonText
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    // Stores the report cards shown on the landing page.
+    private List<ReportLinkCardViewModel> reports = new();
+
+    // Returns the number of report cards currently available on the page.
+    private int ReportCount => reports?.Count ?? 0;
+
+    // Loads the report landing cards when the page opens.
+    protected override void OnInitialized()
+    {
+        reports = new List<ReportLinkCardViewModel>
+        {
+            new ReportLinkCardViewModel
+            {
+                Title = "Attendance Reports",
+                Description = "Review attendance records, class attendance counts, and optional deliverer-filtered results by month.",
+                Href = "/reports/attendance",
+                ButtonText = "Open Attendance Reports"
+            },
+            new ReportLinkCardViewModel
+            {
+                Title = "Volunteer Time Report",
+                Description = "Review total volunteer hours and average repair time by month, with an optional volunteer filter.",
+                Href = "/reports/volunteer-time",
+                ButtonText = "Open Volunteer Time Report"
+            },
+            new ReportLinkCardViewModel
+            {
+                Title = "Monthly Repair Summary",
+                Description = "Review the number of repairs completed in a selected month and the average repair cost for that period.",
+                Href = "/reports/monthly-repair-summary",
+                ButtonText = "Open Monthly Repair Summary"
+            },
+            new ReportLinkCardViewModel
+            {
+                Title = "Monthly Parts Report",
+                Description = "Review the spare parts used in a selected month, including quantity, unit cost, and line total.",
+                Href = "/reports/monthly-parts",
+                ButtonText = "Open Monthly Parts Report"
+            },
+            new ReportLinkCardViewModel
+            {
+                Title = "Monthly Part Type Summary",
+                Description = "Review grouped monthly parts usage by type, including total quantity used and total cost for each type.",
+                Href = "/reports/monthly-part-type-summary",
+                ButtonText = "Open Part Type Summary"
+            },
+            new ReportLinkCardViewModel
+            {
+                Title = "Daily Classes Report",
+                Description = "Review the classes scheduled for a selected day, defaulting to the current day.",
+                Href = "/reports/daily-classes",
+                ButtonText = "Open Daily Classes Report"
+            },
+            new ReportLinkCardViewModel
+            {
+                Title = "Volunteer Class Report",
+                Description = "Review the classes delivered by a selected volunteer in a chosen month.",
+                Href = "/reports/volunteer-classes",
+                ButtonText = "Open Volunteer Class Report"
+            }
+        };
+    }
+
+    // Holds the content for one report landing card.
+    private sealed class ReportLinkCardViewModel
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string Href { get; set; } = string.Empty;
+        public string ButtonText { get; set; } = string.Empty;
+    }
+}

@@ -1,0 +1,490 @@
+﻿@page "/vehicles/create"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Components
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.Enums
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@inject IVehicleService VehicleService
+@inject IMotoristService MotoristService
+@inject NavigationManager NavigationManager
+@rendermode InteractiveServer
+
+<PageTitle>Register Vehicle</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Register Vehicle</h1>
+            <p class="st-page-subtitle">Create a new vehicle record and link it to a motorist.</p>
+        </div>
+
+        <div class="st-page-actions">
+            <a href="@BackNavigationUrl" class="st-btn st-btn--secondary">Back</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(submitErrorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @submitErrorMessage
+        </div>
+    }
+
+    <EditForm Model="model" OnValidSubmit="HandleValidSubmit" FormName="VehicleCreate">
+        <DataAnnotationsValidator />
+
+        <fieldset disabled="@isSaving" aria-busy="@isSaving" class="border-0 p-0 m-0">
+            <div class="st-stack-lg">
+                <div class="st-card st-card--allow-overflow">
+                    <div class="st-card__header">
+                        <div>
+                            <h2 class="st-card-title">Assign Motorist</h2>
+                            <p class="st-card-subtitle">Select the motorist who owns this vehicle before saving the record.</p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        <div class="row g-4 align-items-start">
+                            <div class="col-12 col-lg-8">
+                                @if (ShowStandaloneMotoristPicker)
+                                {
+                                    <div class="st-field mb-0">
+                                        <label for="motorist-search" class="st-label">Search Motorist</label>
+
+                                        <div class="row g-2 align-items-end">
+                                            <div class="col-12 col-sm">
+                                                <div class="st-autocomplete">
+                                                    <input id="motorist-search"
+                                                           class="st-input"
+                                                           type="text"
+                                                           placeholder="Search motorist by name, email, or phone"
+                                                           value="@motoristSearchTerm"
+                                                           @oninput="HandleMotoristSearchInput"
+                                                           @onfocus="HandleMotoristSearchFocus"
+                                                           @onblur="HandleMotoristSearchBlur" />
+
+                                                    @if (isMotoristSearchDropdownOpen && motoristSearchResults.Any())
+                                                    {
+                                                        <div class="st-autocomplete__menu">
+                                                            @foreach (var motorist in motoristSearchResults)
+                                                            {
+                                                                <button type="button"
+                                                                        class="st-autocomplete__item"
+                                                                        @onclick="() => SelectMotorist(motorist)">
+                                                                    <span class="st-autocomplete__primary">@motorist.FirstName @motorist.LastName</span>
+                                                                    <span class="st-autocomplete__secondary">
+                                                                        @(string.IsNullOrWhiteSpace(motorist.Email) ? "No email" : motorist.Email)
+                                                                        ·
+                                                                        @(string.IsNullOrWhiteSpace(motorist.PhoneNumber) ? "No phone" : motorist.PhoneNumber)
+                                                                    </span>
+                                                                </button>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+
+                                            <div class="col-12 col-sm-auto">
+                                                <button type="button"
+                                                        class="st-btn st-btn--secondary w-100"
+                                                        @onclick="ClearMotoristSearch">
+                                                    Clear
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                else if (selectedMotorist is not null)
+                                {
+                                    <div class="st-selected-summary">
+                                        <div class="st-selected-summary__title">@selectedMotorist.FirstName @selectedMotorist.LastName</div>
+                                        <div class="st-selected-summary__meta">
+                                            @(string.IsNullOrWhiteSpace(selectedMotorist.Email) ? "No email" : selectedMotorist.Email)
+                                            ·
+                                            @(string.IsNullOrWhiteSpace(selectedMotorist.PhoneNumber) ? "No phone" : selectedMotorist.PhoneNumber)
+                                        </div>
+                                    </div>
+                                }
+
+                                @if (selectedMotorist is not null && !HasPreselectedMotoristFromQuery)
+                                {
+                                    <div class="mt-3">
+                                        <button type="button" class="st-btn st-btn--secondary" @onclick="ChangeMotorist">
+                                            Change Motorist
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="col-12 col-lg-4">
+                                @if (HasSelectedMotorist)
+                                {
+                                    <div class="st-inline-status st-inline-status--info">
+                                        <strong>Selected motorist</strong>
+                                        <span>@selectedMotorist?.FirstName @selectedMotorist?.LastName</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="st-inline-status st-inline-status--warning">
+                                        <strong>No motorist selected</strong>
+                                        <span>Please choose a motorist before saving.</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="st-card st-card--allow-overflow">
+                    <div class="st-card__header">
+                        <div>
+                            <h2 class="st-card-title">Vehicle Details</h2>
+                            <p class="st-card-subtitle">Enter the main vehicle information for the new record.</p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        <div class="row g-4">
+                            <div class="col-12 col-md-6">
+                                <div class="st-field mb-0">
+                                    <label for="registration-number" class="st-label">Registration Number</label>
+                                    <InputText id="registration-number" class="st-input" @bind-Value="model.RegistrationNumber" />
+                                    <ValidationMessage For="() => model.RegistrationNumber" class="validation-message" />
+                                </div>
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <div class="st-field mb-0">
+                                    <label for="make" class="st-label">Make</label>
+                                    <InputText id="make" class="st-input" @bind-Value="model.Make" />
+                                    <ValidationMessage For="() => model.Make" class="validation-message" />
+                                </div>
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <div class="st-field mb-0">
+                                    <label for="model" class="st-label">Model</label>
+                                    <InputText id="model" class="st-input" @bind-Value="model.Model" />
+                                    <ValidationMessage For="() => model.Model" class="validation-message" />
+                                </div>
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <div class="st-field mb-0">
+                                    <label for="year" class="st-label">Year</label>
+                                    <InputNumber id="year" class="st-input" @bind-Value="model.Year" />
+                                    <ValidationMessage For="() => model.Year" class="validation-message" />
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="st-field mb-0">
+                                    <label for="vehicle-type-trigger" class="st-label">Vehicle Type</label>
+
+                                    <div class="st-dropdown">
+                                        <button id="vehicle-type-trigger"
+                                                type="button"
+                                                class="st-select st-dropdown__trigger"
+                                                @onclick="ToggleVehicleTypeDropdown"
+                                                aria-expanded="@isVehicleTypeDropdownOpen">
+                                            <span>@SelectedVehicleTypeText</span>
+                                            <span class="st-dropdown__chevron">▾</span>
+                                        </button>
+
+                                        @if (isVehicleTypeDropdownOpen)
+                                        {
+                                            <button type="button"
+                                                    class="st-dropdown__backdrop"
+                                                    @onclick="CloseVehicleTypeDropdown"
+                                                    aria-label="Close vehicle type menu"></button>
+
+                                            <div class="st-dropdown__menu">
+                                                @foreach (var vehicleType in Enum.GetValues<VehicleType>())
+                                                {
+                                                    <button type="button"
+                                                            class="st-dropdown__item"
+                                                            @onclick="() => SelectVehicleType(vehicleType)">
+                                                        @vehicleType
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+
+                                    <ValidationMessage For="() => model.VehicleType" class="validation-message" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                            <button type="button" class="st-btn st-btn--secondary" @onclick="GoBack">
+                                Cancel
+                            </button>
+
+                            <button type="submit" class="st-btn st-btn--primary" disabled="@(!HasSelectedMotorist || isSaving)">
+                                @(isSaving ? "Registering Vehicle..." : "Register Vehicle")
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </fieldset>
+    </EditForm>
+</div>
+
+@code {
+    // This is the form model used by the Vehicle Create page.
+    // The EditForm binds to this object, and the user input is stored in its properties.
+    private readonly VehicleCreateViewModel model = new();
+
+    // Reads a value called "motoristId" from the page URL query string,
+    // for example: /vehicles/create?motoristId=15
+    [SupplyParameterFromQuery(Name = "motoristId")]
+    public int? MotoristId { get; set; }
+
+    // Reads a value called "returnUrl" from the page URL query string,
+    // for example: /vehicles/create?returnUrl=%2Fvehicles%2Fsearch
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    // Stores the text entered when searching for a motorist in standalone vehicle creation.
+    private string motoristSearchTerm = string.Empty;
+
+    // Stores the list of motorists returned by the search.
+    private List<Motorist> motoristSearchResults = new();
+
+    // Stores the currently selected motorist from the standalone search results.
+    private Motorist? selectedMotorist;
+
+    // Stores a page-level submit error message when vehicle creation fails.
+    private string? submitErrorMessage;
+
+    // Tracks whether the custom vehicle type dropdown is open.
+    private bool isVehicleTypeDropdownOpen;
+
+    // Controls whether the standalone motorist autocomplete dropdown is currently visible.
+    private bool isMotoristSearchDropdownOpen;
+
+    // Tracks whether the page is currently saving a new vehicle.
+    private bool isSaving;
+
+    // True when the form already has a valid motorist linked to it.
+    private bool HasSelectedMotorist => model.MotoristId > 0 && selectedMotorist is not null;
+
+    // True when the page was opened with a valid preselected motorist from the query string.
+    private bool HasPreselectedMotoristFromQuery => MotoristId is not null && selectedMotorist is not null;
+
+    // True when the standalone motorist picker should be shown.
+    private bool ShowStandaloneMotoristPicker => !HasPreselectedMotoristFromQuery && !HasSelectedMotorist;
+
+    // Shows the currently selected vehicle type as text in the custom dropdown trigger.
+    private string SelectedVehicleTypeText => model.VehicleType.ToString();
+
+    // Returns the safest and most correct back-navigation URL for this page.
+    private string BackNavigationUrl
+    {
+        get
+        {
+            // Uses the explicit returnUrl first when it is present and clearly local.
+            if (!string.IsNullOrWhiteSpace(ReturnUrl)
+                && ReturnUrl.StartsWith("/")
+                && !ReturnUrl.StartsWith("//"))
+            {
+                return ReturnUrl;
+            }
+
+            // Falls back to the motorist details page when the vehicle create page
+            // was opened with a preselected motorist.
+            if (MotoristId is int motoristId)
+            {
+                return $"/motorists/details/{motoristId}";
+            }
+
+            // Uses the vehicles search page as the default fallback.
+            return "/vehicles/search";
+        }
+    }
+
+    // Runs when the user types in the motorist search box and updates the autocomplete results.
+    private async Task HandleMotoristSearchInput(ChangeEventArgs e)
+    {
+        // Read the latest typed value from the input event and store it safely as text.
+        motoristSearchTerm = e.Value?.ToString() ?? string.Empty;
+
+        // Clears any old page-level error because the user is actively trying again.
+        submitErrorMessage = null;
+
+        // Clears the previous selected motorist because the user is starting a new search.
+        selectedMotorist = null;
+
+        // Clears the linked owner from the vehicle form until a new motorist is chosen.
+        model.MotoristId = 0;
+
+        // If the search is empty, only spaces, or too short, do not run a real search.
+        if (string.IsNullOrWhiteSpace(motoristSearchTerm) || motoristSearchTerm.Trim().Length < 2)
+        {
+            // Removes any old results because the current input is not strong enough to search.
+            motoristSearchResults.Clear();
+
+            // Closes the autocomplete dropdown because there is nothing useful to show.
+            isMotoristSearchDropdownOpen = false;
+            return;
+        }
+
+        // Reuses the motorist service search logic, but keeps only a small top set of matches
+        // so the dropdown stays compact and does not become a huge list.
+        motoristSearchResults = await MotoristService.SearchMotoristsAsync(motoristSearchTerm.Trim(), 1, 8);
+
+        // Opens the dropdown only if at least one matching motorist was found.
+        isMotoristSearchDropdownOpen = motoristSearchResults.Any();
+    }
+
+    // Clears the standalone motorist search state and removes any selected owner.
+    private void ClearMotoristSearch()
+    {
+        motoristSearchTerm = string.Empty;
+        motoristSearchResults.Clear();
+        selectedMotorist = null;
+        model.MotoristId = 0;
+        isMotoristSearchDropdownOpen = false;
+        submitErrorMessage = null;
+    }
+
+    // Lets the user reopen the standalone picker after selecting a motorist manually.
+    private void ChangeMotorist()
+    {
+        ClearMotoristSearch();
+    }
+
+    // Applies the chosen motorist to the vehicle form in standalone create mode.
+    private void SelectMotorist(Motorist motorist)
+    {
+        selectedMotorist = motorist;
+        model.MotoristId = motorist.MotoristId;
+        motoristSearchResults.Clear();
+        motoristSearchTerm = $"{motorist.FirstName} {motorist.LastName}";
+        isMotoristSearchDropdownOpen = false;
+        submitErrorMessage = null;
+    }
+
+    // Returns the user to the correct place depending on how the page was opened.
+    private void GoBack()
+    {
+        NavigationManager.NavigateTo(BackNavigationUrl);
+    }
+
+    // Saves the new vehicle and then returns the user to the most logical page.
+    private async Task HandleValidSubmit()
+    {
+        // Stops the save if a save is already in progress.
+        if (isSaving)
+        {
+            return;
+        }
+
+        submitErrorMessage = null;
+        isSaving = true;
+
+        try
+        {
+            await VehicleService.CreateVehicleAsync(model);
+
+            // After a successful save, return to the same logical origin page.
+            NavigationManager.NavigateTo(BackNavigationUrl);
+        }
+        catch (InvalidOperationException ex)
+        {
+            submitErrorMessage = ex.Message;
+        }
+        catch
+        {
+            submitErrorMessage = "The vehicle could not be saved. Please check the details and try again.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    // Reopens the autocomplete dropdown when the input gains focus and there are still results to show.
+    private void HandleMotoristSearchFocus()
+    {
+        if (motoristSearchResults.Any())
+        {
+            isMotoristSearchDropdownOpen = true;
+        }
+    }
+
+    // Closes the autocomplete dropdown shortly after the input loses focus.
+    private async Task HandleMotoristSearchBlur()
+    {
+        await Task.Delay(150);
+        isMotoristSearchDropdownOpen = false;
+    }
+
+    // Opens or closes the custom vehicle type dropdown.
+    private void ToggleVehicleTypeDropdown()
+    {
+        isVehicleTypeDropdownOpen = !isVehicleTypeDropdownOpen;
+    }
+
+    // Applies the chosen vehicle type and closes the dropdown.
+    private void SelectVehicleType(VehicleType vehicleType)
+    {
+        model.VehicleType = vehicleType;
+        isVehicleTypeDropdownOpen = false;
+        submitErrorMessage = null;
+    }
+
+    // Closes the custom vehicle type dropdown.
+    private void CloseVehicleTypeDropdown()
+    {
+        isVehicleTypeDropdownOpen = false;
+    }
+
+    // This runs when the page receives parameters, including query string values.
+    protected override async Task OnParametersSetAsync()
+    {
+        submitErrorMessage = null;
+
+        // If the page was opened with a preselected motorist ID, try to load that owner.
+        if (MotoristId is int motoristId)
+        {
+            try
+            {
+                model.MotoristId = motoristId;
+                selectedMotorist = await MotoristService.GetMotoristByIdAsync(motoristId);
+
+                if (selectedMotorist is null)
+                {
+                    model.MotoristId = 0;
+                    submitErrorMessage = "The selected motorist could not be loaded. Please choose a motorist before saving this vehicle.";
+                }
+            }
+            catch
+            {
+                model.MotoristId = 0;
+                selectedMotorist = null;
+                submitErrorMessage = "The selected motorist could not be loaded. Please choose a motorist before saving this vehicle.";
+            }
+
+            motoristSearchResults.Clear();
+            motoristSearchTerm = string.Empty;
+            isMotoristSearchDropdownOpen = false;
+            return;
+        }
+
+        // If there is no preselected motorist and nothing valid is currently selected, keep the standalone picker clean.
+        if (!HasSelectedMotorist)
+        {
+            selectedMotorist = null;
+            motoristSearchResults.Clear();
+            motoristSearchTerm = string.Empty;
+            isMotoristSearchDropdownOpen = false;
+            model.MotoristId = 0;
+        }
+    }
+}

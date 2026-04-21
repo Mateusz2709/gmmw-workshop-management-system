@@ -1,0 +1,531 @@
+﻿@page "/classes/edit/{WorkshopClassId:int}"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Forms
+@using GMMW.Web.Components.Shared
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IClassService ClassService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Edit Class</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Edit Class</h1>
+            <p class="st-page-subtitle">
+                Update the class details for an existing workshop class. Once a class has started, timetable fields are locked to protect timetable integrity.
+            </p>
+        </div>
+
+        <div class="st-page-actions">
+            <a href="@($"/classes/details/{WorkshopClassId}")" class="st-btn st-btn--secondary">Back to Class Details</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(submitErrorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @submitErrorMessage
+        </div>
+    }
+
+    @if (showValidationMessage && string.IsNullOrWhiteSpace(submitErrorMessage))
+    {
+        <div class="st-alert st-alert--warning" role="alert">
+            Please correct the highlighted fields and try again.
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="st-card">
+            <div class="st-card__body">
+                <div class="st-alert st-alert--info mb-0" role="status">
+                    Loading class details...
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <EditForm Model="model"
+                  OnValidSubmit="HandleValidSubmit"
+                  OnInvalidSubmit="HandleInvalidSubmit"
+                  FormName="ClassEdit">
+            <DataAnnotationsValidator />
+
+            <fieldset disabled="@isSaving" aria-busy="@isSaving">
+                <div class="st-stack-lg">
+                    <div class="st-card st-card--allow-overflow">
+                        <div class="st-card__header">
+                            <div>
+                                <h2 class="st-card-title">Assign Deliverer</h2>
+                                <p class="st-card-subtitle">
+                                    Search by deliverer name and choose the active workshop user who will run this class.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-card__body">
+                            <div class="row g-4 align-items-start">
+                                <div class="col-12 col-xl-8">
+                                    @if (selectedDeliverer is null)
+                                    {
+                                        <div class="st-field mb-0">
+                                            <label for="deliverer-search" class="st-label">Search Deliverer</label>
+
+                                            <div class="row g-2 align-items-end">
+                                                <div class="col-12 col-lg">
+                                                    <div class="st-autocomplete">
+                                                        <input id="deliverer-search"
+                                                               class="st-input"
+                                                               type="text"
+                                                               placeholder="Type at least 2 characters"
+                                                               value="@delivererSearchTerm"
+                                                               @oninput="HandleDelivererSearchInput"
+                                                               @onfocus="HandleDelivererSearchFocus"
+                                                               @onblur="HandleDelivererSearchBlur" />
+
+                                                        @if (isDelivererDropdownOpen && delivererSearchResults.Any())
+                                                        {
+                                                            <div class="st-autocomplete__menu">
+                                                                @foreach (var deliverer in delivererSearchResults)
+                                                                {
+                                                                    <button type="button"
+                                                                            class="st-autocomplete__item"
+                                                                            @onclick="() => SelectDeliverer(deliverer)">
+                                                                        <span class="st-autocomplete__primary">@deliverer.DisplayName</span>
+                                                                    </button>
+                                                                }
+                                                            </div>
+                                                        }
+                                                    </div>
+
+                                                    <ValidationMessage For="() => model.DeliveredByUserId" class="validation-message" />
+                                                </div>
+
+                                                <div class="col-12 col-lg-auto">
+                                                    <button type="button"
+                                                            class="st-btn st-btn--secondary w-100"
+                                                            @onclick="ClearDelivererSearch"
+                                                            disabled="@(!CanClearDelivererSearch || isSaving)">
+                                                        Clear
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="st-selected-summary">
+                                            <div class="st-selected-summary__title">@selectedDeliverer.DisplayName</div>
+                                            <div class="st-selected-summary__meta">Selected deliverer for this class</div>
+                                        </div>
+
+                                        <div class="mt-3 d-flex flex-wrap gap-2">
+                                            <button type="button"
+                                                    class="st-btn st-btn--secondary"
+                                                    @onclick="ClearDelivererSearch"
+                                                    disabled="@isSaving">
+                                                Change Deliverer
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+
+                                <div class="col-12 col-xl-4">
+                                    @if (!HasSelectedDeliverer)
+                                    {
+                                        <span class="st-inline-status st-inline-status--warning">
+                                            No deliverer selected
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="st-inline-status st-inline-status--info">
+                                            Deliverer selected
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="st-card st-card--allow-overflow">
+                        <div class="st-card__header">
+                            <div>
+                                <h2 class="st-card-title">Class Details</h2>
+                                <p class="st-card-subtitle">
+                                    Update the main timetable and description details for this class.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-card__body">
+                            @if (isTimetableLocked)
+                            {
+                                <div class="st-alert st-alert--warning mb-4" role="alert">
+                                    This class has already started. The timetable fields are now locked, but the title, description, and delivering user can still be updated.
+                                </div>
+                            }
+
+                            <div class="row g-4">
+                                <div class="col-12">
+                                    <div class="st-field mb-0">
+                                        <label for="class-title" class="st-label">Class Title</label>
+                                        <InputText id="class-title"
+                                                   class="st-input"
+                                                   @bind-Value="model.Title" />
+                                        <ValidationMessage For="() => model.Title" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    @if (isTimetableLocked)
+                                    {
+                                        <div class="st-field mb-0">
+                                            <label for="locked-class-date" class="st-label">Class Date</label>
+                                            <input id="locked-class-date"
+                                                   class="st-input"
+                                                   type="text"
+                                                   value="@model.ClassDate.ToString("dd MMM yyyy")"
+                                                   disabled />
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <StDatePicker Label="Class Date"
+                                                      Value="model.ClassDate"
+                                                      ValueChanged="OnClassDateChanged" />
+                                        <ValidationMessage For="() => model.ClassDate" class="validation-message" />
+                                    }
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    @if (isTimetableLocked)
+                                    {
+                                        <div class="st-field mb-0">
+                                            <label for="locked-start-time" class="st-label">Start Time</label>
+                                            <input id="locked-start-time"
+                                                   class="st-input"
+                                                   type="text"
+                                                   value="@FormatTime(model.StartTime)"
+                                                   disabled />
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <StTimePicker Label="Start Time"
+                                                      Value="model.StartTime"
+                                                      ValueChanged="OnStartTimeChanged" />
+                                        <ValidationMessage For="() => model.StartTime" class="validation-message" />
+                                    }
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    @if (isTimetableLocked)
+                                    {
+                                        <div class="st-field mb-0">
+                                            <label for="locked-end-time" class="st-label">End Time</label>
+                                            <input id="locked-end-time"
+                                                   class="st-input"
+                                                   type="text"
+                                                   value="@FormatTime(model.EndTime)"
+                                                   disabled />
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <StTimePicker Label="End Time"
+                                                      Value="model.EndTime"
+                                                      ValueChanged="OnEndTimeChanged" />
+                                        <ValidationMessage For="() => model.EndTime" class="validation-message" />
+                                    }
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="st-field mb-0">
+                                        <label for="description" class="st-label">Description</label>
+                                        <InputTextArea id="description"
+                                                       class="st-textarea"
+                                                       @bind-Value="model.Description" />
+                                        <ValidationMessage For="() => model.Description" class="validation-message" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                                <button type="submit"
+                                        class="st-btn st-btn--primary"
+                                        disabled="@(!HasSelectedDeliverer || isSaving)">
+                                    @(isSaving ? "Saving Changes..." : "Save Changes")
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </fieldset>
+        </EditForm>
+    }
+</div>
+
+@code {
+    // Stores the workshop class ID taken from the route.
+    [Parameter]
+    public int WorkshopClassId { get; set; }
+
+    // Stores the form model bound to the class edit page.
+    private readonly ClassEditViewModel model = new();
+
+    // Stores all available delivering users loaded from the service.
+    private List<ApplicationUserOptionViewModel> delivererOptions = new();
+
+    // Stores the current filtered dropdown results for the deliverer search.
+    private List<ApplicationUserOptionViewModel> delivererSearchResults = new();
+
+    // Stores the currently selected delivering user shown in the summary area.
+    private ApplicationUserOptionViewModel? selectedDeliverer;
+
+    // Stores the text entered into the deliverer search input.
+    private string delivererSearchTerm = string.Empty;
+
+    // Stores a page-level error message when loading or saving fails.
+    private string? submitErrorMessage;
+
+    // Shows one short validation prompt instead of a full validation summary dump.
+    private bool showValidationMessage;
+
+    // Tracks whether the page is still loading its initial data.
+    private bool isLoading = true;
+
+    // Tracks whether the form is currently being saved.
+    private bool isSaving;
+
+    // Controls whether the timetable fields should be locked after the class has started.
+    private bool isTimetableLocked;
+
+    // Controls whether the custom deliverer autocomplete dropdown is visible.
+    private bool isDelivererDropdownOpen;
+
+    // True when the form has a valid selected deliverer.
+    private bool HasSelectedDeliverer =>
+        !string.IsNullOrWhiteSpace(model.DeliveredByUserId) && selectedDeliverer is not null;
+
+    // Controls whether the deliverer Clear button should be enabled.
+    private bool CanClearDelivererSearch =>
+        !string.IsNullOrWhiteSpace(delivererSearchTerm) || selectedDeliverer is not null;
+
+    // Runs when the page receives its route parameter and loads the existing class data.
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        isSaving = false;
+        isTimetableLocked = false;
+        submitErrorMessage = null;
+        showValidationMessage = false;
+
+        try
+        {
+            // Loads all valid delivering users for the custom autocomplete.
+            delivererOptions = await ClassService.GetAvailableClassDeliverersAsync();
+
+            // Loads the selected workshop class.
+            var workshopClass = await ClassService.GetWorkshopClassByIdAsync(WorkshopClassId);
+
+            if (workshopClass is null)
+            {
+                submitErrorMessage = "The selected class could not be loaded.";
+                return;
+            }
+
+            // Copies the loaded class values into the edit form model.
+            model.WorkshopClassId = workshopClass.WorkshopClassId;
+            model.Title = workshopClass.Title;
+            model.ClassDate = workshopClass.ClassDate;
+            model.StartTime = workshopClass.StartTime;
+            model.EndTime = workshopClass.EndTime;
+            model.DeliveredByUserId = workshopClass.DeliveredByUserId;
+            model.Description = workshopClass.Description;
+
+            // Locks timetable fields once the class has started.
+            isTimetableLocked = HasClassStarted(workshopClass.ClassDate, workshopClass.StartTime);
+
+            // Tries to find the currently assigned deliverer in the loaded option list.
+            selectedDeliverer = delivererOptions
+                .FirstOrDefault(option => option.UserId == workshopClass.DeliveredByUserId);
+
+            // Falls back to the currently linked deliverer details if the user is not in the option list.
+            if (selectedDeliverer is null)
+            {
+                selectedDeliverer = new ApplicationUserOptionViewModel
+                {
+                    UserId = workshopClass.DeliveredByUserId,
+                    DisplayName = workshopClass.DeliveredByUser.FullName
+                };
+            }
+
+            // Shows the selected deliverer name in the search box area.
+            delivererSearchTerm = selectedDeliverer.DisplayName;
+            delivererSearchResults.Clear();
+            isDelivererDropdownOpen = false;
+        }
+        catch
+        {
+            submitErrorMessage = "The class edit data could not be loaded. Please refresh the page and try again.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    // Runs when the user types in the deliverer search box and updates the autocomplete results.
+    private Task HandleDelivererSearchInput(ChangeEventArgs e)
+    {
+        delivererSearchTerm = e.Value?.ToString() ?? string.Empty;
+        submitErrorMessage = null;
+        showValidationMessage = false;
+
+        // Clears the previous selection because the user is starting a new search.
+        selectedDeliverer = null;
+        model.DeliveredByUserId = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(delivererSearchTerm) || delivererSearchTerm.Trim().Length < 2)
+        {
+            delivererSearchResults.Clear();
+            isDelivererDropdownOpen = false;
+            return Task.CompletedTask;
+        }
+
+        // Filters the loaded deliverer list in memory and keeps only a small top set of matches.
+        delivererSearchResults = delivererOptions
+            .Where(option => option.DisplayName.Contains(delivererSearchTerm.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Take(8)
+            .ToList();
+
+        isDelivererDropdownOpen = delivererSearchResults.Any();
+        return Task.CompletedTask;
+    }
+
+    // Applies the chosen deliverer to the edit form.
+    private void SelectDeliverer(ApplicationUserOptionViewModel deliverer)
+    {
+        selectedDeliverer = deliverer;
+        model.DeliveredByUserId = deliverer.UserId;
+        delivererSearchTerm = deliverer.DisplayName;
+        delivererSearchResults.Clear();
+        isDelivererDropdownOpen = false;
+        submitErrorMessage = null;
+        showValidationMessage = false;
+    }
+
+    // Clears the deliverer search state and removes any current selection.
+    private void ClearDelivererSearch()
+    {
+        delivererSearchTerm = string.Empty;
+        delivererSearchResults.Clear();
+        selectedDeliverer = null;
+        model.DeliveredByUserId = string.Empty;
+        isDelivererDropdownOpen = false;
+        submitErrorMessage = null;
+        showValidationMessage = false;
+    }
+
+    // Reopens the deliverer autocomplete dropdown when the input gains focus and results still exist.
+    private void HandleDelivererSearchFocus()
+    {
+        if (delivererSearchResults.Any())
+        {
+            isDelivererDropdownOpen = true;
+        }
+    }
+
+    // Closes the deliverer autocomplete dropdown shortly after the input loses focus.
+    private async Task HandleDelivererSearchBlur()
+    {
+        await Task.Delay(150);
+        isDelivererDropdownOpen = false;
+    }
+
+    // Updates the class date from the shared custom picker.
+    private Task OnClassDateChanged(DateTime? value)
+    {
+        model.ClassDate = value ?? DateTime.Today;
+        submitErrorMessage = null;
+        showValidationMessage = false;
+        return Task.CompletedTask;
+    }
+
+    // Updates the start time from the shared custom picker.
+    private Task OnStartTimeChanged(TimeSpan? value)
+    {
+        model.StartTime = value;
+        submitErrorMessage = null;
+        showValidationMessage = false;
+        return Task.CompletedTask;
+    }
+
+    // Updates the end time from the shared custom picker.
+    private Task OnEndTimeChanged(TimeSpan? value)
+    {
+        model.EndTime = value;
+        submitErrorMessage = null;
+        showValidationMessage = false;
+        return Task.CompletedTask;
+    }
+
+    // Saves the updated workshop class and then redirects to the class details page.
+    private async Task HandleValidSubmit()
+    {
+        if (isSaving)
+        {
+            return;
+        }
+
+        submitErrorMessage = null;
+        showValidationMessage = false;
+        isSaving = true;
+
+        try
+        {
+            await ClassService.UpdateWorkshopClassAsync(model);
+            NavigationManager.NavigateTo($"/classes/details/{model.WorkshopClassId}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            submitErrorMessage = ex.Message;
+        }
+        catch
+        {
+            submitErrorMessage = "The workshop class could not be updated. Please check the details and try again.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    // Returns true when the current date and time has reached or passed the class start moment.
+    private static bool HasClassStarted(DateTime classDate, TimeSpan? startTime)
+    {
+        var classStart = classDate.Date.Add(startTime ?? TimeSpan.Zero);
+        return DateTime.Now >= classStart;
+    }
+
+    // Formats a nullable TimeSpan for read-only timetable display.
+    private static string FormatTime(TimeSpan? value)
+    {
+        return value?.ToString(@"hh\:mm") ?? string.Empty;
+    }
+
+    // Runs when the form is submitted but validation fails.
+    private void HandleInvalidSubmit(EditContext editContext)
+    {
+        submitErrorMessage = null;
+        showValidationMessage = true;
+    }
+}

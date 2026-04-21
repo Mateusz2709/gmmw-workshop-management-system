@@ -1,0 +1,48 @@
+﻿@page "/access-denied"
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>Access Denied</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Access Denied</h1>
+            <p class="st-page-subtitle">
+                You do not have permission to view this page.
+            </p>
+        </div>
+    </div>
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Restricted Area</h2>
+                <p class="st-card-subtitle">
+                    This area is restricted based on your current access level.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="st-alert st-alert--warning" role="alert">
+                Sorry, you do not have access to this section.
+            </div>
+
+            <div class="d-flex flex-column-reverse flex-sm-row justify-content-start gap-2 mt-4 pt-4 border-top">
+                <AuthorizeView>
+                    <Authorized>
+                        <a href="/dashboard" class="st-btn st-btn--secondary">
+                            Return to Dashboard
+                        </a>
+                    </Authorized>
+
+                    <NotAuthorized>
+                        <a href="/public/todayclasses" class="st-btn st-btn--secondary">
+                            Return to Public Classes
+                        </a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </div>
+    </div>
+</div>

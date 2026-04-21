@@ -1,0 +1,176 @@
+﻿@page "/vehicles/search"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using GMMW.Web.Services.Interfaces
+@using Microsoft.AspNetCore.Components
+@inject IVehicleService VehicleService
+@inject NavigationManager NavigationManager
+@rendermode InteractiveServer
+@using GMMW.Web.Models.Domain
+
+<PageTitle>Vehicle Search</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Vehicle Search</h1>
+            <p class="st-page-subtitle">
+                Find an existing vehicle record using the main lookup options available in the system.
+            </p>
+        </div>
+
+        <div class="st-page-actions">
+            <a href="/vehicles/create" class="st-btn st-btn--primary">Register Vehicle</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="@(isError ? "st-alert st-alert--danger" : "st-alert st-alert--info")" role="alert">
+            @message
+        </div>
+    }
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Search Vehicles</h2>
+                <p class="st-card-subtitle">
+                    Use vehicle ID for direct lookup or registration number for a quick search.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="row g-4">
+                <div class="col-12 col-xl-6">
+                    <div class="h-100 p-4 border rounded-4 st-surface-soft">
+                        <div class="text-uppercase small fw-semibold st-muted mb-2">Direct Lookup</div>
+                        <h3 class="st-section-title mb-2">Search by Vehicle ID</h3>
+                        <p class="st-page-subtitle mt-0 mb-4">
+                            Open the exact vehicle record when the ID is already known.
+                        </p>
+
+                        <div class="st-field mb-0">
+                            <label for="vehicle-id-search" class="st-label">Vehicle ID</label>
+                            <input id="vehicle-id-search"
+                                   class="st-input"
+                                   type="number"
+                                   placeholder="Enter vehicle ID"
+                                   @bind="vehicleIdSearch" />
+                        </div>
+
+                        <div class="d-flex justify-content-start mt-3">
+                            <button type="button" class="st-btn st-btn--primary" @onclick="SearchByIdAsync">
+                                Search by ID
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 col-xl-6">
+                    <div class="h-100 p-4 border rounded-4 st-surface-soft">
+                        <div class="text-uppercase small fw-semibold st-muted mb-2">Quick Lookup</div>
+                        <h3 class="st-section-title mb-2">Search by Registration</h3>
+                        <p class="st-page-subtitle mt-0 mb-4">
+                            Use the registration number when it is easier to identify the vehicle that way.
+                        </p>
+
+                        <div class="st-field mb-0">
+                            <label for="registration-search" class="st-label">Registration Number</label>
+                            <input id="registration-search"
+                                   class="st-input"
+                                   type="text"
+                                   placeholder="Enter registration number"
+                                   @bind="registrationSearch" />
+                        </div>
+
+                        <div class="d-flex justify-content-start mt-3">
+                            <button type="button" class="st-btn st-btn--secondary" @onclick="SearchByRegistrationAsync">
+                                Search by Registration
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                <button type="button" class="st-btn st-btn--secondary" @onclick="ResetSearch">
+                    Reset
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+@code {
+    // Stores the vehicle ID entered by the user for the required ID-based search.
+    private int? vehicleIdSearch;
+
+    // Stores the registration number entered by the user for the additional registration lookup.
+    private string registrationSearch = string.Empty;
+
+    // Stores the current page-level message shown to the user after search or reset actions.
+    private string? message;
+
+    // Stores whether the current message should be shown as an error-style alert.
+    private bool isError;
+
+
+    // The Vehicle ID search method.
+    private async Task SearchByIdAsync()
+    {
+        if (!vehicleIdSearch.HasValue || vehicleIdSearch.Value <= 0)
+        {
+            message = "Please enter a valid vehicle ID greater than 0.";
+            isError = true;
+            return;
+        }
+        var vehicle = await VehicleService.GetVehicleByIdAsync(vehicleIdSearch.Value);
+
+        if (vehicle is null)
+        {
+            message = "No vehicle was found for that ID.";
+            isError = true;
+            return;
+        }
+
+        message = null;
+        isError = false;
+        NavigationManager.NavigateTo($"/vehicles/details/{vehicle.VehicleId}");
+
+    }
+
+    private async Task SearchByRegistrationAsync()
+    {
+        if (string.IsNullOrWhiteSpace(registrationSearch))
+        {
+            message = "Please enter a registration number.";
+            isError = true;
+            return;
+        }
+
+        var vehicle = await VehicleService.GetVehicleByRegistrationNumberAsync(registrationSearch);
+
+        if (vehicle is null)
+        {
+            message = "No vehicle was found for that registration number.";
+            isError = true;
+            return;
+        }
+
+        message = null;
+        isError = false;
+        NavigationManager.NavigateTo($"/vehicles/details/{vehicle.VehicleId}");
+    }
+
+    private void ResetSearch()
+    {
+        vehicleIdSearch = null;
+        registrationSearch = string.Empty;
+        message = null;
+        isError = false;
+    }
+}

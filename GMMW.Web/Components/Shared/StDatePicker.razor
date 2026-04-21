@@ -1,0 +1,232 @@
+﻿@using Microsoft.AspNetCore.Components
+
+<div class="st-field mb-0">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label class="st-label">@Label</label>
+    }
+
+    <div class="st-dropdown">
+        <button type="button"
+                class="st-input st-dropdown__trigger w-100 text-start"
+                @onclick="ToggleCalendar"
+                aria-expanded="@isCalendarOpen">
+            <span>@DisplayText</span>
+            <span class="st-dropdown__chevron">▾</span>
+        </button>
+
+        @if (isCalendarOpen)
+        {
+            <button type="button"
+                    class="st-dropdown__backdrop"
+                    @onclick="CloseCalendar"
+                    aria-label="Close date picker"></button>
+
+            <div class="st-dropdown__menu st-date-picker__menu">
+                <div class="st-card">
+                    <div class="st-card__body">
+                        <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="ShowPreviousMonth">
+                                Previous
+                            </button>
+
+                            <div class="fw-semibold text-center flex-grow-1">
+                                @MonthYearText
+                            </div>
+
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="ShowNextMonth">
+                                Next
+                            </button>
+                        </div>
+
+                        <div class="row g-2 mb-2 text-center fw-semibold">
+                            @foreach (var dayName in dayNames)
+                            {
+                                <div class="col">@dayName</div>
+                            }
+                        </div>
+
+                        @foreach (var week in CalendarWeeks)
+                        {
+                            <div class="row g-2 mb-2">
+                                @foreach (var day in week)
+                                {
+                                    <div class="col">
+                                        @if (day.HasValue)
+                                        {
+                                            <button type="button"
+                                                    class="@GetDayButtonClass(day.Value)"
+                                                    @onclick="() => SelectDateAsync(day.Value)">
+                                                @day.Value.Day
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <div class="st-date-picker__placeholder">0</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <div class="d-flex flex-column flex-sm-row justify-content-between gap-2 mt-3 pt-3 border-top">
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="SetTodayAsync">
+                                Today
+                            </button>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string Label { get; set; } = string.Empty;
+
+    [Parameter]
+    public DateTime? Value { get; set; }
+
+    [Parameter]
+    public EventCallback<DateTime?> ValueChanged { get; set; }
+
+    private bool isCalendarOpen;
+    private DateTime displayedMonth;
+    private DateTime? lastSyncedValue;
+
+    private readonly string[] dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    private string DisplayText => Value.HasValue
+        ? Value.Value.ToString("dd/MM/yyyy")
+        : "Select a date";
+
+    private string MonthYearText => displayedMonth.ToString("MMMM yyyy");
+
+    private List<List<DateTime?>> CalendarWeeks => BuildCalendarWeeks();
+
+    protected override void OnParametersSet()
+    {
+        if (lastSyncedValue != Value)
+        {
+            SyncDisplayedMonth();
+            lastSyncedValue = Value;
+        }
+    }
+
+    private void ToggleCalendar()
+    {
+        if (!isCalendarOpen)
+        {
+            SyncDisplayedMonth();
+        }
+
+        isCalendarOpen = !isCalendarOpen;
+    }
+
+    private void CloseCalendar()
+    {
+        isCalendarOpen = false;
+    }
+
+    private void ShowPreviousMonth()
+    {
+        displayedMonth = displayedMonth.AddMonths(-1);
+    }
+
+    private void ShowNextMonth()
+    {
+        displayedMonth = displayedMonth.AddMonths(1);
+    }
+
+    private async Task SelectDateAsync(DateTime day)
+    {
+        var selectedDate = day.Date;
+
+        Value = selectedDate;
+        lastSyncedValue = selectedDate;
+
+        await ValueChanged.InvokeAsync(selectedDate);
+
+        isCalendarOpen = false;
+    }
+
+    private async Task SetTodayAsync()
+    {
+        var today = DateTime.Today;
+
+        Value = today;
+        displayedMonth = new DateTime(today.Year, today.Month, 1);
+        lastSyncedValue = today;
+
+        await ValueChanged.InvokeAsync(today);
+
+        isCalendarOpen = false;
+    }
+
+
+    private void SyncDisplayedMonth()
+    {
+        var baseDate = Value ?? DateTime.Today;
+        displayedMonth = new DateTime(baseDate.Year, baseDate.Month, 1);
+    }
+
+    private bool IsSelectedDate(DateTime day)
+    {
+        return Value.HasValue && Value.Value.Date == day.Date;
+    }
+
+    private string GetDayButtonClass(DateTime day)
+    {
+        return IsSelectedDate(day)
+            ? "st-btn st-btn--primary w-100"
+            : "st-btn st-btn--secondary w-100";
+    }
+
+    private List<List<DateTime?>> BuildCalendarWeeks()
+    {
+        var weeks = new List<List<DateTime?>>();
+
+        var firstDayOfMonth = new DateTime(displayedMonth.Year, displayedMonth.Month, 1);
+        var daysInMonth = DateTime.DaysInMonth(displayedMonth.Year, displayedMonth.Month);
+
+        var startOffset = ((int)firstDayOfMonth.DayOfWeek + 6) % 7;
+
+        var currentWeek = new List<DateTime?>();
+
+        for (var i = 0; i < startOffset; i++)
+        {
+            currentWeek.Add(null);
+        }
+
+        for (var day = 1; day <= daysInMonth; day++)
+        {
+            currentWeek.Add(new DateTime(displayedMonth.Year, displayedMonth.Month, day));
+
+            if (currentWeek.Count == 7)
+            {
+                weeks.Add(currentWeek);
+                currentWeek = new List<DateTime?>();
+            }
+        }
+
+        while (currentWeek.Count > 0 && currentWeek.Count < 7)
+        {
+            currentWeek.Add(null);
+        }
+
+        if (currentWeek.Count == 7)
+        {
+            weeks.Add(currentWeek);
+        }
+
+        return weeks;
+    }
+}

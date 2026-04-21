@@ -1,0 +1,324 @@
+﻿@page "/vehicles/details/{VehicleId:int}/repairs"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.Enums
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IRepairService RepairService
+@inject IVehicleService VehicleService
+
+<PageTitle>Vehicle Repairs</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Vehicle Repair History</h1>
+            <p class="st-page-subtitle">
+                View all repairs linked to the selected vehicle and continue the repair workflow.
+            </p>
+        </div>
+
+        @if (!isLoading && vehicle is not null)
+        {
+            <div class="st-page-actions">
+                <a href="@($"/vehicles/details/{VehicleId}")" class="st-btn st-btn--secondary">Back to Vehicle Details</a>
+                <a href="@($"/vehicles/details/{VehicleId}/repairs/create")" class="st-btn st-btn--primary">Book Repair</a>
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="st-alert st-alert--info" role="status">
+            Loading repair records...
+        </div>
+    }
+    else if (vehicle is null)
+    {
+        <div class="st-alert st-alert--warning" role="alert">
+            The selected vehicle could not be found.
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            <div class="col-12 col-xl-5">
+                <div class="st-card st-detail-card h-100">
+                    <div class="st-card__body">
+                        <div class="st-detail-card__heading">
+                            <div class="st-detail-card__icon">V</div>
+                            <div>
+                                <h2 class="st-section-title mb-1">Vehicle Summary</h2>
+                                <p class="st-card-subtitle mb-0">
+                                    Quick reference details for the selected vehicle and linked owner.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-detail-list">
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Registration</div>
+                                <div class="st-detail-list__value">@vehicle.RegistrationNumber</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Type</div>
+                                <div class="st-detail-list__value">@vehicle.VehicleType</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Make / Model</div>
+                                <div class="st-detail-list__value">@vehicle.Make @vehicle.Model</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Owner</div>
+                                <div class="st-detail-list__value">@vehicle.Motorist.FirstName @vehicle.Motorist.LastName</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Phone</div>
+                                <div class="st-detail-list__value">
+                                    @(string.IsNullOrWhiteSpace(vehicle.Motorist.PhoneNumber) ? "—" : vehicle.Motorist.PhoneNumber)
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-7">
+                <div class="st-card h-100">
+                    <div class="st-card__header">
+                        <div>
+                            <h2 class="st-card-title">Repair Records</h2>
+                            <p class="st-card-subtitle">@ResultsSubtitle</p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        @if (repairs.Count == 0)
+                        {
+                            <div class="st-empty">
+                                <span class="st-empty__title">No linked repairs</span>
+                                No repairs have been recorded for this vehicle yet.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="st-table-shell">
+                                <div class="table-responsive">
+                                    <table class="st-table align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Repair ID</th>
+                                                <th>Date</th>
+                                                <th>Status</th>
+                                                <th>Fault Description</th>
+                                                <th class="text-end">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var repair in repairs)
+                                            {
+                                                <tr>
+                                                    <td>@repair.RepairId</td>
+                                                    <td>@repair.RepairDate.ToString("dd/MM/yyyy")</td>
+                                                    <td>
+                                                        <span class="@(repair.RepairStatus == RepairStatus.Completed
+                                                                                                                                                                                      ? "st-inline-status st-inline-status--info"
+                                                                                                                                                                                      : "st-inline-status st-inline-status--warning")">
+                                                            @repair.RepairStatus
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        @(string.IsNullOrWhiteSpace(repair.FaultDescription)
+                                                            ? "—"
+                                                            : repair.FaultDescription)
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <div class="d-flex flex-wrap justify-content-end gap-2">
+                                                            <a href="@($"/repairs/details/{repair.RepairId}")" class="st-btn st-btn--secondary">
+                                                                View
+                                                            </a>
+
+                                                            @if (repair.RepairStatus != RepairStatus.Completed)
+                                                            {
+                                                                <a href="@($"/repairs/edit/{repair.RepairId}")" class="st-btn st-btn--primary">
+                                                                    Edit
+                                                                </a>
+                                                            }
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            @if (ShowPagination)
+                            {
+                                <div class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 mt-4 pt-4 border-top">
+                                    <div class="st-muted">
+                                        Page @currentPage of @totalPages
+                                    </div>
+
+                                    <div class="d-flex flex-wrap justify-content-end gap-2">
+                                        <button type="button"
+                                                class="st-btn st-btn--secondary"
+                                                @onclick="GoToPreviousPageAsync"
+                                                disabled="@(!CanGoToPreviousPage)">
+                                            Previous
+                                        </button>
+
+                                        <button type="button"
+                                                class="st-btn st-btn--secondary"
+                                                @onclick="GoToNextPageAsync"
+                                                disabled="@(!CanGoToNextPage)">
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    // Receives the selected vehicle ID from the route.
+    [Parameter]
+    public int VehicleId { get; set; }
+
+    // Stores the loaded vehicle shown in the summary card.
+    private Vehicle? vehicle;
+
+    // Stores the visible page of repair rows linked to this vehicle.
+    private List<Repair> repairs = new();
+
+    // Stores a page-level error message if loading fails.
+    private string? errorMessage;
+
+    // Tracks whether the page is still loading its data.
+    private bool isLoading = true;
+
+    // Stores the current visible results page.
+    private int currentPage = 1;
+
+    // Defines how many repair rows are shown on one page.
+    private const int PageSize = 5;
+
+    // Stores the total number of repairs linked to this vehicle.
+    private int totalRepairCount;
+
+    // Stores the total number of available pages.
+    private int totalPages = 1;
+
+    // Shows pagination only when more than one page of repairs exists.
+    private bool ShowPagination => totalPages > 1;
+
+    // Controls whether the previous-page button should be enabled.
+    private bool CanGoToPreviousPage => !isLoading && currentPage > 1;
+
+    // Controls whether the next-page button should be enabled.
+    private bool CanGoToNextPage => !isLoading && currentPage < totalPages;
+
+    // Builds the short results summary shown in the repairs card header.
+    private string ResultsSubtitle =>
+        totalRepairCount > 0
+            ? totalPages > 1
+                ? $"Showing page {currentPage} of {totalPages} for {totalRepairCount} repair record{(totalRepairCount == 1 ? "" : "s")}."
+                : $"Showing {totalRepairCount} repair record{(totalRepairCount == 1 ? "" : "s")}."
+            : "No repair records have been recorded for this vehicle yet.";
+
+    // Loads the current page of repair rows for the selected vehicle.
+    private async Task LoadRepairsPageAsync()
+    {
+        // Gets the total matching repair count first so pagination can be calculated correctly.
+        totalRepairCount = await RepairService.GetRepairCountByVehicleIdAsync(VehicleId);
+
+        // Calculates how many result pages exist for this vehicle.
+        totalPages = totalRepairCount == 0
+            ? 1
+            : (totalRepairCount + PageSize - 1) / PageSize;
+
+        // Pulls the current page back into range if the total size changed.
+        if (currentPage > totalPages)
+        {
+            currentPage = totalPages;
+        }
+
+        // Loads only the visible page of repair records.
+        repairs = await RepairService.GetRepairsByVehicleIdPagedAsync(VehicleId, currentPage, PageSize);
+    }
+
+    // Moves to the previous repair-history page when possible.
+    private async Task GoToPreviousPageAsync()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            await LoadRepairsPageAsync();
+        }
+    }
+
+    // Moves to the next repair-history page when possible.
+    private async Task GoToNextPageAsync()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+            await LoadRepairsPageAsync();
+        }
+    }
+
+    // Loads the selected vehicle and its linked repair history whenever the route changes.
+    protected override async Task OnParametersSetAsync()
+    {
+        errorMessage = null;
+        currentPage = 1;
+        totalRepairCount = 0;
+        totalPages = 1;
+        repairs = new List<Repair>();
+        vehicle = null;
+        isLoading = true;
+
+        try
+        {
+            // Loads the selected vehicle for the summary card and page context.
+            vehicle = await VehicleService.GetVehicleByIdAsync(VehicleId);
+
+            if (vehicle is null)
+            {
+                errorMessage = "The selected vehicle could not be found.";
+                return;
+            }
+
+            // Loads the first page of repair history for this vehicle.
+            await LoadRepairsPageAsync();
+        }
+        catch
+        {
+            // Shows a friendly message if the repair history cannot be loaded.
+            errorMessage = "Repair records could not be loaded.";
+        }
+        finally
+        {
+            // Ends the loading state whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+}

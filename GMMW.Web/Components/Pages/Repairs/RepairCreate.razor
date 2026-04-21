@@ -1,0 +1,316 @@
+﻿@page "/vehicles/details/{VehicleId:int}/repairs/create"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Forms
+@using GMMW.Web.Components.Shared
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IVehicleService VehicleService
+@inject IRepairService RepairService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Book Repair</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Book Repair</h1>
+            <p class="st-page-subtitle">
+                Create a new repair booking for the selected vehicle and capture the reported fault.
+            </p>
+        </div>
+
+        @if (!isLoading && vehicle is not null)
+        {
+            <div class="st-page-actions">
+                <a href="@($"/vehicles/details/{VehicleId}")" class="st-btn st-btn--secondary">Back to Vehicle Details</a>
+                <a href="@($"/vehicles/details/{VehicleId}/repairs")" class="st-btn st-btn--secondary">Back to Repair History</a>
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    @if (showValidationMessage && string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--warning" role="alert">
+            Please correct the highlighted fields and try again.
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="st-alert st-alert--info" role="status">
+            Loading vehicle information...
+        </div>
+    }
+    else if (vehicle is null)
+    {
+        <div class="st-alert st-alert--warning" role="alert">
+            The selected vehicle could not be found.
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            <div class="col-12 col-xl-4">
+                <div class="st-card st-detail-card h-100">
+                    <div class="st-card__body">
+                        <div class="st-detail-card__heading">
+                            <div class="st-detail-card__icon">V</div>
+                            <div>
+                                <h2 class="st-section-title mb-1">Selected Vehicle</h2>
+                                <p class="st-card-subtitle mb-0">
+                                    This repair booking will be linked to the vehicle and owner shown below.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-detail-list">
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Registration</div>
+                                <div class="st-detail-list__value">@vehicle.RegistrationNumber</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Type</div>
+                                <div class="st-detail-list__value">@vehicle.VehicleType</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Make / Model</div>
+                                <div class="st-detail-list__value">@vehicle.Make @vehicle.Model</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Year</div>
+                                <div class="st-detail-list__value">@(vehicle.Year?.ToString() ?? "—")</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Owner</div>
+                                <div class="st-detail-list__value">@vehicle.Motorist.FirstName @vehicle.Motorist.LastName</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Email</div>
+                                <div class="st-detail-list__value">
+                                    @(string.IsNullOrWhiteSpace(vehicle.Motorist.Email) ? "—" : vehicle.Motorist.Email)
+                                </div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Phone</div>
+                                <div class="st-detail-list__value">
+                                    @(string.IsNullOrWhiteSpace(vehicle.Motorist.PhoneNumber) ? "—" : vehicle.Motorist.PhoneNumber)
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-8">
+                <div class="st-card st-card--allow-overflow h-100">
+                    <div class="st-card__header">
+                        <div>
+                            <h2 class="st-card-title">Repair Booking Details</h2>
+                            <p class="st-card-subtitle">
+                                Record the booking date and the fault reported by the motorist.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        <div class="st-alert st-alert--info mb-4" role="note">
+                            The repair will be created with status <strong>Pending</strong>. Fuller repair details can be added later from the edit page.
+                        </div>
+
+                        <EditForm Model="FormModel"
+                                  OnValidSubmit="HandleValidSubmit"
+                                  OnInvalidSubmit="HandleInvalidSubmit"
+                                  FormName="RepairCreate">
+                            <DataAnnotationsValidator />
+
+                            <fieldset disabled="@isSaving" aria-busy="@isSaving">
+                                <div class="row g-4">
+                                    <div class="col-12 col-md-6">
+                                        <StDatePicker Label="Repair Date"
+                                                      Value="FormModel.RepairDate"
+                                                      ValueChanged="OnRepairDateChanged" />
+                                        <ValidationMessage For="() => FormModel.RepairDate" class="validation-message" />
+                                    </div>
+
+                                    <div class="col-12">
+                                        <div class="st-field mb-0">
+                                            <label for="fault-description" class="st-label">Fault Description</label>
+                                            <InputTextArea id="fault-description"
+                                                           class="st-textarea"
+                                                           rows="6"
+                                                           @bind-Value="FormModel.FaultDescription" />
+                                            <ValidationMessage For="() => FormModel.FaultDescription" class="validation-message" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                                    <a href="@($"/vehicles/details/{VehicleId}/repairs")"
+                                           class="st-btn st-btn--secondary">
+                                        Cancel
+                                    </a>
+
+                                    <button type="submit" class="st-btn st-btn--primary" disabled="@isSaving">
+                                        @(isSaving ? "Saving Repair Booking..." : "Save Repair Booking")
+                                    </button>
+                                </div>
+                            </fieldset>
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    // Receives the selected vehicle ID from the route.
+    [Parameter]
+    public int VehicleId { get; set; }
+
+    // Stores the repair booking form values posted from the page.
+    [SupplyParameterFromForm(FormName = "RepairCreate")]
+    private RepairCreateViewModel? model { get; set; }
+
+    // Always provides a safe non-null model instance for page rendering and form binding.
+    private RepairCreateViewModel FormModel => model ??= new();
+
+    // Stores the loaded vehicle record shown in the left-side summary card.
+    private Vehicle? vehicle;
+
+    // Stores a page-level error message for load or save problems.
+    private string? errorMessage;
+
+    // Shows one short top-level validation prompt instead of a full summary dump.
+    private bool showValidationMessage;
+
+    // Tracks whether the page is still loading the selected vehicle context.
+    private bool isLoading = true;
+
+    // Prevents duplicate submits while the booking is being saved.
+    private bool isSaving;
+
+    // Loads the selected vehicle and prepares the booking model when the route changes.
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        isSaving = false;
+        errorMessage = null;
+        showValidationMessage = false;
+
+        // Resets the model before loading fresh route data.
+        model = new RepairCreateViewModel();
+
+        try
+        {
+            // Loads the selected vehicle together with its owner details for the booking page context.
+            vehicle = await VehicleService.GetVehicleByIdAsync(VehicleId);
+
+            // Stops early if the vehicle cannot be found.
+            if (vehicle is null)
+            {
+                errorMessage = "The selected vehicle could not be found.";
+                return;
+            }
+
+            // Keeps the repair booking linked to the selected vehicle.
+            FormModel.VehicleId = vehicle.VehicleId;
+
+            // Starts the date field on today if the model has not been set yet.
+            if (FormModel.RepairDate == default)
+            {
+                FormModel.RepairDate = DateTime.Today;
+            }
+        }
+        catch
+        {
+            // Shows a friendly message if the vehicle context could not be loaded.
+            errorMessage = "Repair booking details could not be loaded.";
+            vehicle = null;
+        }
+        finally
+        {
+            // Ends the loading state whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+
+    // Runs only when the booking form passes validation.
+    private async Task HandleValidSubmit()
+    {
+        // Stops accidental double-submit while the save is already running.
+        if (isSaving)
+        {
+            return;
+        }
+
+        // Keeps the form hidden from save attempts if the vehicle context is missing.
+        if (vehicle is null)
+        {
+            errorMessage = "The selected vehicle could not be found.";
+            return;
+        }
+
+        // Clears old messages before a new save attempt.
+        FormModel.VehicleId = vehicle.VehicleId;
+        errorMessage = null;
+        showValidationMessage = false;
+        isSaving = true;
+
+        try
+        {
+            // Creates the new repair booking through the service layer.
+            await RepairService.CreateRepairAsync(FormModel);
+
+            // Returns to the vehicle-specific repair history after a successful booking.
+            NavigationManager.NavigateTo($"/vehicles/details/{VehicleId}/repairs");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Shows expected business-rule messages from the service layer.
+            errorMessage = ex.Message;
+        }
+        catch
+        {
+            // Shows a friendly fallback message for unexpected save failures.
+            errorMessage = "Repair booking could not be saved.";
+        }
+        finally
+        {
+            // Re-enables the form whether the save succeeded or failed.
+            isSaving = false;
+        }
+    }
+
+    // Runs when the form is submitted but validation fails.
+    private void HandleInvalidSubmit(EditContext editContext)
+    {
+        errorMessage = null;
+        showValidationMessage = true;
+    }
+
+    // Updates the repair date from the shared date picker.
+    private Task OnRepairDateChanged(DateTime? value)
+    {
+        FormModel.RepairDate = value ?? DateTime.Today;
+        showValidationMessage = false;
+        return Task.CompletedTask;
+    }
+}

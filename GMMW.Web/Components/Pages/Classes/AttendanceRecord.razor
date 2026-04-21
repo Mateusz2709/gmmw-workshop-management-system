@@ -1,0 +1,599 @@
+﻿@page "/classes/{ClassId:int}/attendance"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IAttendanceService AttendanceService
+@inject IMotoristService MotoristService
+@inject IClassService ClassService
+
+<PageTitle>Record Attendance</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Record Attendance</h1>
+            <p class="st-page-subtitle">
+                Mark motorists as present for the selected class and manage recorded attendance from one list.
+            </p>
+        </div>
+
+        <div class="st-page-actions">
+            <a href="@BackLink" class="st-btn st-btn--secondary">Back to Class Details</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="st-alert st-alert--success" role="status" aria-live="polite">
+            @successMessage
+        </div>
+    }
+
+    @if (selectedClass is not null)
+    {
+        <div class="st-card">
+            <div class="st-card__header">
+                <div>
+                    <h2 class="st-card-title">Selected Class</h2>
+                    <p class="st-card-subtitle">
+                        Review the class context before recording attendance.
+                    </p>
+                </div>
+            </div>
+
+            <div class="st-card__body">
+                <div class="row g-4">
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-field mb-0">
+                            <div class="st-label">Title</div>
+                            <div class="fw-semibold">@selectedClass.Title</div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-field mb-0">
+                            <div class="st-label">Class Date</div>
+                            <div>@selectedClass.ClassDate.ToString("dd/MM/yyyy")</div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-field mb-0">
+                            <div class="st-label">Time</div>
+                            <div>@FormatClassTime(selectedClass.StartTime, selectedClass.EndTime)</div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-field mb-0">
+                            <div class="st-label">Deliverer</div>
+                            <div>@(selectedClass.DeliveredByUser is null ? "—" : selectedClass.DeliveredByUser.FullName)</div>
+                        </div>
+                    </div>
+
+                    <div class="col-12">
+                        <span class="st-inline-status st-inline-status--info">
+                            Attendance recorded: @currentAttendees.Count motorist@(currentAttendees.Count == 1 ? "" : "s")
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Find Motorists</h2>
+                <p class="st-card-subtitle">
+                    Search by name, email, or phone. Leave the box empty to browse all motorists.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-lg">
+                    <div class="st-field mb-0">
+                        <label for="motorist-attendance-search" class="st-label">Search Term</label>
+                        <InputText id="motorist-attendance-search"
+                                   class="st-input"
+                                   placeholder="Search by name, email, or phone"
+                                   @bind-Value="motoristSearchTerm"
+                                   @onkeydown="HandleMotoristSearchKeyDown" />
+                    </div>
+                </div>
+
+                <div class="col-12 col-lg-auto">
+                    <div class="d-flex flex-column flex-sm-row gap-2">
+                        <button type="button"
+                                class="st-btn st-btn--primary"
+                                @onclick="SearchMotoristsAsync"
+                                disabled="@isLoadingMotorists">
+                            Search
+                        </button>
+
+                        <button type="button"
+                                class="st-btn st-btn--secondary"
+                                @onclick="ClearMotoristSearch"
+                                disabled="@(!CanClearMotoristSearch || isLoadingMotorists)">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Motorist Results</h2>
+                <p class="st-card-subtitle">
+                    @MotoristResultsSubtitle
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            @if (isLoadingMotorists)
+            {
+                <div class="st-alert st-alert--info mb-0" role="status">
+                    Loading motorists...
+                </div>
+            }
+            else if (motorists.Count == 0)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">No motorists found</span>
+                    @(HasMotoristSearchTerm
+                        ? "Try a different search term or clear the search to browse all motorists."
+                        : "No motorists are currently available to record against this class.")
+                </div>
+            }
+            else
+            {
+                <div class="st-table-shell">
+                    <div class="table-responsive">
+                        <table class="st-table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Motorist</th>
+                                    <th>Contact</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var motorist in motorists)
+                                {
+                                    var isRecorded = IsMotoristMarkedPresent(motorist.MotoristId);
+                                    var isCurrentRowBusy = attendanceActionMotoristId == motorist.MotoristId && isSavingAttendance;
+
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">@motorist.FirstName @motorist.LastName</div>
+                                        </td>
+
+                                        <td>
+                                            <div class="st-muted small">
+                                                @(string.IsNullOrWhiteSpace(motorist.Email) ? "No email" : motorist.Email)
+                                            </div>
+                                            <div class="st-muted small">
+                                                @(string.IsNullOrWhiteSpace(motorist.PhoneNumber) ? "No phone" : motorist.PhoneNumber)
+                                            </div>
+                                        </td>
+
+                                        <td>
+                                            @if (isRecorded)
+                                            {
+                                                <span class="st-inline-status st-inline-status--info">Recorded</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="st-inline-status st-inline-status--warning">Not recorded</span>
+                                            }
+                                        </td>
+
+                                        <td class="text-end">
+                                            @if (isRecorded)
+                                            {
+                                                <button type="button"
+                                                        class="st-btn st-btn--danger"
+                                                        @onclick="() => RemoveAttendanceAsync(motorist.MotoristId)"
+                                                        disabled="@isSavingAttendance">
+                                                    @(isCurrentRowBusy ? "Removing..." : "Remove")
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <button type="button"
+                                                        class="st-btn st-btn--primary"
+                                                        @onclick="() => MarkPresentAsync(motorist.MotoristId)"
+                                                        disabled="@isSavingAttendance">
+                                                    @(isCurrentRowBusy ? "Saving..." : "Mark Present")
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                @if (ShowMotoristPagination)
+                {
+                    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mt-4 pt-4 border-top">
+                        <p class="mb-0">Page @motoristCurrentPage of @motoristTotalPages</p>
+
+                        <div class="d-flex gap-2">
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToPreviousMotoristPageAsync"
+                                    disabled="@(motoristCurrentPage == 1 || isLoadingMotorists)">
+                                Previous
+                            </button>
+
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToNextMotoristPageAsync"
+                                    disabled="@(motoristCurrentPage >= motoristTotalPages || isLoadingMotorists)">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // Gets the selected class ID from the route.
+    [Parameter]
+    public int ClassId { get; set; }
+
+    // Stores the current attendance records already linked to the selected class.
+    private List<ClassAttendance> currentAttendees = new();
+
+    // Stores a quick lookup of motorist IDs already marked present.
+    private HashSet<int> recordedMotoristIds = new();
+
+    // Stores the selected class details shown at the top of the page.
+    private WorkshopClass? selectedClass;
+
+    // Stores page-level error feedback.
+    private string? errorMessage;
+
+    // Stores page-level success feedback.
+    private string? successMessage;
+
+    // Stores the current motorist search term.
+    private string? motoristSearchTerm;
+
+    // Stores the current page of motorist results.
+    private List<Motorist> motorists = new();
+
+    // Stores the current motorist result page number.
+    private int motoristCurrentPage = 1;
+
+    // Defines how many motorists are shown per page.
+    private const int MotoristPageSize = 10;
+
+    // Stores the total number of motorists matching the current search.
+    private int totalMotoristCount;
+
+    // Stores the total number of motorist pages.
+    private int motoristTotalPages = 1;
+
+    // Tracks whether the motorist list is currently loading.
+    private bool isLoadingMotorists;
+
+    // Tracks whether an attendance add/remove action is currently running.
+    private bool isSavingAttendance;
+
+    // Stores the motorist ID currently being updated so the row button text can reflect it.
+    private int? attendanceActionMotoristId;
+
+    // Shows the correct back target for this class-specific page.
+    private string BackLink => ClassId > 0 ? $"/classes/details/{ClassId}" : "/classes";
+
+    // Shows whether the motorist pagination controls should appear.
+    private bool ShowMotoristPagination => totalMotoristCount > MotoristPageSize;
+
+    // Helps the page decide whether the current state is a search or a full browse.
+    private bool HasMotoristSearchTerm => !string.IsNullOrWhiteSpace(motoristSearchTerm);
+
+    // Controls whether the Clear button should be enabled.
+    private bool CanClearMotoristSearch => !string.IsNullOrWhiteSpace(motoristSearchTerm);
+
+    // Builds the short results summary shown above the motorist table.
+    private string MotoristResultsSubtitle =>
+        totalMotoristCount == 0
+            ? (HasMotoristSearchTerm ? "No matching motorists were found for the current search." : "Browse all motorists and record attendance from one list.")
+            : $"Showing {motorists.Count} of {totalMotoristCount} motorist record{(totalMotoristCount == 1 ? "" : "s")}.";
+
+    // Rebuilds the page state whenever the class route parameter changes.
+    protected override async Task OnParametersSetAsync()
+    {
+        errorMessage = null;
+        successMessage = null;
+        selectedClass = null;
+        currentAttendees = new List<ClassAttendance>();
+        recordedMotoristIds = new HashSet<int>();
+        motorists = new List<Motorist>();
+        motoristCurrentPage = 1;
+        totalMotoristCount = 0;
+        motoristTotalPages = 1;
+        attendanceActionMotoristId = null;
+        isSavingAttendance = false;
+
+        if (ClassId < 1)
+        {
+            errorMessage = "A valid class must be selected before attendance can be recorded.";
+            return;
+        }
+
+        await LoadSelectedClassAsync();
+
+        if (selectedClass is null)
+        {
+            if (string.IsNullOrWhiteSpace(errorMessage))
+            {
+                errorMessage = "The selected class could not be loaded.";
+            }
+
+            return;
+        }
+
+        await LoadCurrentAttendeesAsync();
+        await LoadMotoristsAsync();
+    }
+
+    // Rebuilds the quick lookup set from the currently loaded attendance rows.
+    private void SyncRecordedMotoristIds()
+    {
+        recordedMotoristIds = new HashSet<int>();
+
+        foreach (var attendance in currentAttendees)
+        {
+            recordedMotoristIds.Add(attendance.MotoristId);
+        }
+    }
+
+    // Checks whether one motorist is already marked present.
+    private bool IsMotoristMarkedPresent(int motoristId)
+    {
+        return recordedMotoristIds.Contains(motoristId);
+    }
+
+    // Loads the selected class details for the page header/context card.
+    private async Task LoadSelectedClassAsync()
+    {
+        try
+        {
+            selectedClass = await ClassService.GetWorkshopClassByIdAsync(ClassId);
+        }
+        catch
+        {
+            errorMessage = "The selected class could not be loaded. Please try again.";
+            selectedClass = null;
+        }
+    }
+
+    // Loads the current attendance list for the selected class.
+    private async Task LoadCurrentAttendeesAsync()
+    {
+        try
+        {
+            currentAttendees = await AttendanceService.GetAttendanceByClassIdAsync(ClassId);
+            SyncRecordedMotoristIds();
+        }
+        catch
+        {
+            errorMessage = "The attendee list could not be loaded. Please try again.";
+            currentAttendees = new List<ClassAttendance>();
+            recordedMotoristIds = new HashSet<int>();
+        }
+    }
+
+    // Loads the motorist search results and keeps pagination in range.
+    private async Task LoadMotoristsAsync()
+    {
+        isLoadingMotorists = true;
+
+        // Trims the search term so accidental spaces do not affect the search query.
+        var query = string.IsNullOrWhiteSpace(motoristSearchTerm)
+            ? null
+            : motoristSearchTerm.Trim();
+
+        try
+        {
+            totalMotoristCount = await MotoristService.GetMotoristSearchCountAsync(query);
+
+            motoristTotalPages = totalMotoristCount == 0
+                ? 1
+                : (totalMotoristCount + MotoristPageSize - 1) / MotoristPageSize;
+
+            if (motoristCurrentPage > motoristTotalPages)
+            {
+                motoristCurrentPage = motoristTotalPages;
+            }
+
+            motorists = await MotoristService.SearchMotoristsAsync(query, motoristCurrentPage, MotoristPageSize);
+        }
+        catch
+        {
+            errorMessage = "Motorist search could not be completed. Please try again.";
+            motorists = new List<Motorist>();
+            totalMotoristCount = 0;
+            motoristTotalPages = 1;
+            motoristCurrentPage = 1;
+        }
+        finally
+        {
+            isLoadingMotorists = false;
+        }
+    }
+
+    // Starts a fresh motorist search and returns to page 1.
+    private async Task SearchMotoristsAsync()
+    {
+        errorMessage = null;
+        successMessage = null;
+        motoristCurrentPage = 1;
+        await LoadMotoristsAsync();
+    }
+
+    // Clears the motorist search term and reloads the full list.
+    private async Task ClearMotoristSearch()
+    {
+        motoristSearchTerm = string.Empty;
+        errorMessage = null;
+        successMessage = null;
+        motoristCurrentPage = 1;
+        await LoadMotoristsAsync();
+    }
+
+    // Lets Enter trigger the search from the motorist search box.
+    private async Task HandleMotoristSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !isLoadingMotorists)
+        {
+            await SearchMotoristsAsync();
+        }
+    }
+
+    // Moves to the previous motorist page when possible.
+    private async Task GoToPreviousMotoristPageAsync()
+    {
+        if (motoristCurrentPage > 1)
+        {
+            motoristCurrentPage--;
+            await LoadMotoristsAsync();
+        }
+    }
+
+    // Moves to the next motorist page when possible.
+    private async Task GoToNextMotoristPageAsync()
+    {
+        if (motoristCurrentPage < motoristTotalPages)
+        {
+            motoristCurrentPage++;
+            await LoadMotoristsAsync();
+        }
+    }
+
+    // Records one motorist as present for the selected class.
+    private async Task MarkPresentAsync(int motoristId)
+    {
+        if (isSavingAttendance)
+        {
+            return;
+        }
+
+        errorMessage = null;
+        successMessage = null;
+
+        if (ClassId < 1)
+        {
+            errorMessage = "A valid class must be selected before attendance can be recorded.";
+            return;
+        }
+
+        if (IsMotoristMarkedPresent(motoristId))
+        {
+            errorMessage = "This motorist is already marked as attending the selected class.";
+            return;
+        }
+
+        var attendanceModel = new AttendanceRecordViewModel
+        {
+            WorkshopClassId = ClassId,
+            MotoristId = motoristId,
+            AttendanceDate = DateTime.Now
+        };
+
+        attendanceActionMotoristId = motoristId;
+        isSavingAttendance = true;
+
+        try
+        {
+            await AttendanceService.RecordAttendanceAsync(attendanceModel);
+            successMessage = "Attendance recorded successfully.";
+            await LoadCurrentAttendeesAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch
+        {
+            errorMessage = "Attendance could not be recorded. Please try again.";
+        }
+        finally
+        {
+            isSavingAttendance = false;
+            attendanceActionMotoristId = null;
+        }
+    }
+
+    // Removes one motorist's attendance record from the selected class.
+    private async Task RemoveAttendanceAsync(int motoristId)
+    {
+        if (isSavingAttendance)
+        {
+            return;
+        }
+
+        errorMessage = null;
+        successMessage = null;
+
+        if (ClassId < 1)
+        {
+            errorMessage = "A valid class must be selected before attendance can be updated.";
+            return;
+        }
+
+        attendanceActionMotoristId = motoristId;
+        isSavingAttendance = true;
+
+        try
+        {
+            await AttendanceService.RemoveAttendanceAsync(ClassId, motoristId);
+            successMessage = "Attendance removed successfully.";
+            await LoadCurrentAttendeesAsync();
+        }
+        catch
+        {
+            errorMessage = "Attendance could not be removed. Please try again.";
+        }
+        finally
+        {
+            isSavingAttendance = false;
+            attendanceActionMotoristId = null;
+        }
+    }
+
+    // Formats the class time range into one readable timetable string.
+    private string FormatClassTime(TimeSpan startTime, TimeSpan endTime)
+    {
+        var formattedStartTime = DateTime.Today.Add(startTime).ToString("hh:mm tt");
+        var formattedEndTime = DateTime.Today.Add(endTime).ToString("hh:mm tt");
+
+        return $"{formattedStartTime} - {formattedEndTime}";
+    }
+}

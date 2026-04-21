@@ -1,0 +1,378 @@
+﻿@page "/public/todayclasses"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using GMMW.Web.Components.Shared
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Services.Interfaces
+@attribute [AllowAnonymous]
+@inject IClassService ClassService
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Today's Classes</PageTitle>
+
+<div class="st-public-page">
+    <div class="st-stack-lg flex-grow-1">
+        <div class="st-page-header">
+            <div class="st-page-header__copy">
+                <h1 class="st-page-title">Today’s Classes</h1>
+                <p class="st-page-subtitle">Check the public workshop timetable for the selected day.</p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+                @errorMessage
+            </div>
+        }
+
+        <div class="st-card st-card--allow-overflow">
+            <div class="st-card__header">
+                <div>
+                    <h2 class="st-card-title">Select Day</h2>
+                    <p class="st-card-subtitle">Choose a date to view the timetable.</p>
+                </div>
+            </div>
+
+            <div class="st-card__body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-12 col-xl">
+                        <StDatePicker Label="Selected Date"
+                                      Value="selectedDate"
+                                      ValueChanged="OnSelectedDateChangedAsync" />
+                    </div>
+
+                    <div class="col-12 col-xl-auto">
+                        <div class="d-flex flex-column flex-sm-row gap-2">
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToPreviousDayAsync"
+                                    disabled="@isLoading">
+                                Previous Day
+                            </button>
+
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToNextDayAsync"
+                                    disabled="@isLoading">
+                                Next Day
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 pt-4 border-top">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <div class="small text-uppercase fw-semibold st-muted">Selected Day</div>
+                            <div class="fw-semibold mt-1">@SelectedDayLabel</div>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <div class="small text-uppercase fw-semibold st-muted">Classes Scheduled</div>
+                            <div class="fw-semibold mt-1">@ScheduledCountLabel</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="st-card">
+            <div class="st-card__header">
+                <div>
+                    <h2 class="st-card-title">Daily Timetable</h2>
+                    <p class="st-card-subtitle">@DailyTimetableSubtitle</p>
+                </div>
+            </div>
+
+            <div class="st-card__body">
+                @if (isLoading)
+                {
+                    <div class="st-alert st-alert--info mb-0" role="status">
+                        Loading classes...
+                    </div>
+                }
+                else if (classes.Count == 0)
+                {
+                    <div class="st-empty">
+                        <span class="st-empty__title">No classes scheduled</span>
+                        No classes are scheduled for this day.
+                    </div>
+                }
+                else
+                {
+                    <div class="st-table-shell">
+                        <div class="table-responsive">
+                            <table class="st-table align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Class</th>
+                                        <th>Volunteer</th>
+                                        <th>Notes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var workshopClass in classes)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div class="fw-semibold">@FormatClassTime(workshopClass.StartTime, workshopClass.EndTime)</div>
+                                            </td>
+
+                                            <td>
+                                                <div class="fw-semibold">@workshopClass.Title</div>
+                                            </td>
+
+                                            <td>
+                                                @(string.IsNullOrWhiteSpace(workshopClass.DeliveredByUser?.FullName)
+                                                    ? "—"
+                                                    : workshopClass.DeliveredByUser!.FullName)
+                                            </td>
+
+                                            <td>
+                                                @(string.IsNullOrWhiteSpace(workshopClass.Description)
+                                                    ? "—"
+                                                    : workshopClass.Description)
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    @if (ShowPagination)
+                    {
+                        <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mt-4 pt-4 border-top">
+                            <p class="mb-0">Page @currentPage of @totalPages</p>
+
+                            <div class="d-flex gap-2">
+                                <button type="button"
+                                        class="st-btn st-btn--secondary"
+                                        @onclick="GoToPreviousPageAsync"
+                                        disabled="@(!CanGoToPreviousPage)">
+                                    Previous
+                                </button>
+
+                                <button type="button"
+                                        class="st-btn st-btn--secondary"
+                                        @onclick="GoToNextPageAsync"
+                                        disabled="@(!CanGoToNextPage)">
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-auto pt-4 border-top">
+        <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 small">
+            <div>
+                <div class="text-uppercase fw-semibold st-muted">Clinic Information</div>
+                <div class="st-muted">Public timetable display for the workshop entrance.</div>
+            </div>
+
+            <div class="d-flex flex-column flex-sm-row align-items-sm-center gap-2 gap-sm-3">
+                <span>clinic@gmmw.org.uk</span>
+                <span class="d-none d-sm-inline st-muted">|</span>
+                <span>Manchester Central</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private IJSObjectReference? jsModule;
+    private DotNetObjectReference<TodayClasses>? dotNetReference;
+
+    // Stores the currently selected public timetable date.
+    private DateTime selectedDate = DateTime.Today;
+
+    // Stores the current page of class rows shown in the public timetable table.
+    private List<WorkshopClass> classes = new();
+
+    // Stores a friendly page-level error message if loading fails.
+    private string? errorMessage;
+
+    // Tracks whether the timetable is currently loading.
+    private bool isLoading;
+
+    // Stores the current results page number.
+    private int currentPage = 1;
+
+    // Defines how many public class rows are shown on one page.
+    private const int PageSize = 5;
+
+    // Stores the total number of classes for the selected day.
+    private int totalClassCount;
+
+    // Stores the total number of available result pages.
+    private int totalPages = 1;
+
+    // Shows pagination only when the selected day has more rows than one page can hold.
+    private bool ShowPagination => totalClassCount > PageSize;
+
+    // Builds the readable selected-day label used in the summary area.
+    private string SelectedDayLabel => selectedDate.ToString("dddd, dd MMMM yyyy");
+
+    // Builds the readable count label used in the summary area.
+    private string ScheduledCountLabel => $"{totalClassCount} class record{(totalClassCount == 1 ? "" : "s")}";
+
+    // Builds the subtitle shown in the timetable card header.
+    private string DailyTimetableSubtitle =>
+        totalClassCount == 0
+            ? $"No classes are scheduled for {SelectedDayLabel}."
+            : $"Timetable for {SelectedDayLabel}.";
+
+    // Controls whether the previous-page button should be enabled.
+    private bool CanGoToPreviousPage => !isLoading && currentPage > 1;
+
+    // Controls whether the next-page button should be enabled.
+    private bool CanGoToNextPage => !isLoading && currentPage < totalPages;
+
+    // Loads the first public timetable view when the page opens.
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadClassesAsync();
+    }
+
+    // Loads the classes for the selected date and current page.
+    private async Task LoadClassesAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            // Gets the total number of matching classes first so pagination can be calculated correctly.
+            totalClassCount = await ClassService.GetClassSearchCountAsync(selectedDate);
+
+            // Calculates the total number of result pages for the selected day.
+            totalPages = totalClassCount == 0
+                ? 1
+                : (totalClassCount + PageSize - 1) / PageSize;
+
+            // Pulls the current page back into range if the result size changed.
+            if (currentPage > totalPages)
+            {
+                currentPage = totalPages;
+            }
+
+            // Loads just the visible page of class rows for the selected day.
+            classes = await ClassService.SearchClassesAsync(selectedDate, currentPage, PageSize);
+        }
+        catch
+        {
+            // Resets the visible state cleanly if something fails while loading.
+            errorMessage = "The classes for the selected day could not be loaded.";
+            classes = new List<WorkshopClass>();
+            totalClassCount = 0;
+            totalPages = 1;
+            currentPage = 1;
+        }
+        finally
+        {
+            // Ends the loading state whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+
+    // Updates the selected date from the shared date picker and reloads the timetable.
+    private async Task OnSelectedDateChangedAsync(DateTime? value)
+    {
+        selectedDate = (value ?? DateTime.Today).Date;
+        currentPage = 1;
+        await LoadClassesAsync();
+    }
+
+    // Moves the public timetable back by one day and reloads the results.
+    private async Task GoToPreviousDayAsync()
+    {
+        selectedDate = selectedDate.AddDays(-1);
+        currentPage = 1;
+        await LoadClassesAsync();
+    }
+
+    // Moves the public timetable forward by one day and reloads the results.
+    private async Task GoToNextDayAsync()
+    {
+        selectedDate = selectedDate.AddDays(1);
+        currentPage = 1;
+        await LoadClassesAsync();
+    }
+
+    // Moves to the previous page of class rows when possible.
+    private async Task GoToPreviousPageAsync()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            await LoadClassesAsync();
+        }
+    }
+
+    // Moves to the next page of class rows when possible.
+    private async Task GoToNextPageAsync()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+            await LoadClassesAsync();
+        }
+    }
+
+    // Formats the start and end time into one public timetable string.
+    private string FormatClassTime(TimeSpan startTime, TimeSpan endTime)
+    {
+        var formattedStartTime = DateTime.Today.Add(startTime).ToString("hh:mm tt");
+        var formattedEndTime = DateTime.Today.Add(endTime).ToString("hh:mm tt");
+
+        return $"{formattedStartTime} - {formattedEndTime}";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (jsModule is not null)
+        {
+            await jsModule.InvokeVoidAsync("stopClassUpdates");
+            await jsModule.DisposeAsync();
+        }
+
+        if (dotNetReference is not null)
+        {
+            dotNetReference.Dispose();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        dotNetReference = DotNetObjectReference.Create(this);
+
+        jsModule = await JS.InvokeAsync<IJSObjectReference>(
+            "import",
+            "./Components/Pages/Public/TodayClasses.razor.js");
+
+        await jsModule.InvokeVoidAsync("startClassUpdates", dotNetReference);
+    }
+
+    [JSInvokable]
+    public async Task HandleClassesUpdated()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadClassesAsync();
+            StateHasChanged();
+        });
+    }
+}

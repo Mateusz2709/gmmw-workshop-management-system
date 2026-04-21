@@ -1,0 +1,569 @@
+﻿@page "/classes"
+@rendermode InteractiveServer
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using GMMW.Web.Components.Shared
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IClassService ClassService
+
+<PageTitle>Classes</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Classes</h1>
+            <p class="st-page-subtitle">
+                Review scheduled workshop classes and filter them by month and optional deliverer.
+            </p>
+        </div>
+
+        <div class="st-page-actions">
+            <a href="/classes/create" class="st-btn st-btn--primary">Create Class</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    <div class="st-card st-card--allow-overflow">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Class Filters</h2>
+                <p class="st-card-subtitle">
+                    Use month and year filters, then optionally narrow the results to one deliverer. Attendance becomes available once a class has started.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="row g-4 align-items-start">
+                <div class="col-12 col-md-4 col-xl-3">
+                    <StSelectPicker Label="Month"
+                                    Value="@SelectedMonthValue"
+                                    ValueChanged="OnSelectedMonthChangedAsync"
+                                    Options="MonthOptions" />
+                </div>
+
+                <div class="col-12 col-md-4 col-xl-3">
+                    <StSelectPicker Label="Year"
+                                    Value="@SelectedYearValue"
+                                    ValueChanged="OnSelectedYearChangedAsync"
+                                    Options="YearOptions" />
+                </div>
+
+                <div class="col-12 col-xl-6">
+                    <div class="st-field mb-0">
+                        <label for="deliverer-filter-search" class="st-label">Deliverer (Optional)</label>
+
+                        <div class="row g-2 align-items-end">
+                            <div class="col-12 col-sm">
+                                @if (selectedDelivererFilter is null)
+                                {
+                                    <div class="st-autocomplete">
+                                        <input id="deliverer-filter-search"
+                                               class="st-input"
+                                               type="text"
+                                               placeholder="Type at least 2 characters"
+                                               value="@delivererFilterSearchTerm"
+                                               @oninput="HandleDelivererFilterInput"
+                                               @onfocus="HandleDelivererFilterFocus"
+                                               @onblur="HandleDelivererFilterBlur" />
+
+                                        @if (isDelivererFilterDropdownOpen && delivererFilterSearchResults.Any())
+                                        {
+                                            <div class="st-autocomplete__menu">
+                                                @foreach (var deliverer in delivererFilterSearchResults)
+                                                {
+                                                    <button type="button"
+                                                            class="st-autocomplete__item"
+                                                            @onclick="() => SelectDelivererFilter(deliverer)">
+                                                        <span class="st-autocomplete__primary">@deliverer.DisplayName</span>
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="st-selected-summary">
+                                        <div class="st-selected-summary__title">@selectedDelivererFilter.DisplayName</div>
+                                        <div class="st-selected-summary__meta">Deliverer filter applied</div>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="col-12 col-sm-auto">
+                                <button type="button"
+                                        class="st-btn st-btn--secondary w-100"
+                                        @onclick="ClearDelivererFilter"
+                                        disabled="@(!CanClearDelivererFilter || isLoading)">
+                                    @(selectedDelivererFilter is null ? "Clear" : "Change")
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="st-muted small mt-2">
+                            Start typing at least 2 characters, then select a deliverer from the list.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="d-flex flex-column flex-sm-row justify-content-end gap-2 pt-2">
+                        <button type="button"
+                                class="st-btn st-btn--primary"
+                                @onclick="ApplyFiltersAsync"
+                                disabled="@isLoading">
+                            Apply Filters
+                        </button>
+
+                        <button type="button"
+                                class="st-btn st-btn--secondary"
+                                @onclick="ClearFiltersAsync"
+                                disabled="@isLoading">
+                            Reset Filters
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Class Results</h2>
+                <p class="st-card-subtitle">@ResultsSubtitle</p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            @if (isLoading)
+            {
+                <div class="st-alert st-alert--info mb-0" role="status">
+                    Loading class records...
+                </div>
+            }
+            else if (classes.Count == 0)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">No classes found</span>
+                    Try a different month or deliverer filter, or create a new class.
+                </div>
+            }
+            else
+            {
+                <div class="st-table-shell">
+                    <div class="table-responsive">
+                        <table class="st-table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Class Date</th>
+                                    <th>Time</th>
+                                    <th>Deliverer</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var workshopClass in classes)
+                                {
+                                    var canManageAttendance = HasClassStarted(workshopClass);
+                                    var canEditClass = !HasClassCompleted(workshopClass);
+
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">@workshopClass.Title</div>
+                                        </td>
+                                        <td>@workshopClass.ClassDate.ToString("dd/MM/yyyy")</td>
+                                        <td>@FormatClassTime(workshopClass.StartTime, workshopClass.EndTime)</td>
+                                        <td>@(workshopClass.DeliveredByUser is null ? "—" : workshopClass.DeliveredByUser.FullName)</td>
+                                        <td class="text-end">
+                                            <div class="d-flex flex-wrap justify-content-end gap-2">
+                                                <a href="@($"/classes/details/{workshopClass.WorkshopClassId}")"
+                                                       class="st-btn st-btn--secondary">
+                                                    View
+                                                </a>
+
+                                                @if (canEditClass)
+                                                {
+                                                    <a href="@($"/classes/edit/{workshopClass.WorkshopClassId}")"
+                                                           class="st-btn st-btn--secondary">
+                                                        Edit
+                                                    </a>
+                                                }
+
+                                                @if (canManageAttendance)
+                                                {
+                                                    <a href="@($"/classes/{workshopClass.WorkshopClassId}/attendance")"
+                                                           class="st-btn st-btn--secondary">
+                                                        Attendance
+                                                    </a>
+                                                }
+                                                else
+                                                {
+                                                    <button type="button"
+                                                            class="st-btn st-btn--secondary"
+                                                            disabled
+                                                            title="Attendance can be recorded once the class has started.">
+                                                        Attendance
+                                                    </button>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                @if (ShowPagination)
+                {
+                    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mt-4 pt-4 border-top">
+                        <p class="mb-0">Page @currentPage of @totalPages</p>
+
+                        <div class="d-flex gap-2">
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToPreviousPageAsync"
+                                    disabled="@(currentPage == 1 || isLoading)">
+                                Previous
+                            </button>
+
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToNextPageAsync"
+                                    disabled="@(currentPage >= totalPages || isLoading)">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // Stores the list of workshop classes shown in the results area.
+    private List<WorkshopClass> classes = new();
+
+    // Stores the available delivering users for the optional filter.
+    private List<ApplicationUserOptionViewModel> delivererOptions = new();
+
+    // Stores the current filtered dropdown results for the deliverer filter search.
+    private List<ApplicationUserOptionViewModel> delivererFilterSearchResults = new();
+
+    // Stores the currently selected deliverer used as a filter.
+    private ApplicationUserOptionViewModel? selectedDelivererFilter;
+
+    // Stores the text entered into the deliverer filter search input.
+    private string delivererFilterSearchTerm = string.Empty;
+
+    // Stores a page-level error message if loading fails.
+    private string? errorMessage;
+
+    // Tracks whether the page is still loading its filter data or class results.
+    private bool isLoading = true;
+
+    // Stores the selected year for the month-based class filter.
+    private int selectedYear = DateTime.Today.Year;
+
+    // Stores the selected month for the month-based class filter.
+    private int selectedMonth = DateTime.Today.Month;
+
+    // Stores the optional selected delivering user ID for volunteer-specific filtering.
+    private string selectedDelivererUserId = string.Empty;
+
+    // Stores the current page number for pagination.
+    private int currentPage = 1;
+
+    // Defines how many class records are shown on one page.
+    private const int PageSize = 10;
+
+    // Stores the total number of class records matching the current filters.
+    private int totalClassCount;
+
+    // Stores the total number of result pages.
+    private int totalPages = 1;
+
+    // Controls whether the pagination buttons should be shown.
+    private bool ShowPagination => totalClassCount > PageSize;
+
+    // Controls whether the custom deliverer autocomplete dropdown is visible.
+    private bool isDelivererFilterDropdownOpen;
+
+    // Returns true when a specific deliverer has been selected for filtering.
+    private bool HasDelivererFilter => !string.IsNullOrWhiteSpace(selectedDelivererUserId);
+
+    // Controls whether the deliverer clear/change button should be enabled.
+    private bool CanClearDelivererFilter =>
+        !string.IsNullOrWhiteSpace(delivererFilterSearchTerm) || selectedDelivererFilter is not null;
+
+    // Returns the year options shown in the year dropdown.
+    private IEnumerable<int> AvailableYears => Enumerable.Range(DateTime.Today.Year - 2, 5);
+
+    // Returns the month options shown in the custom month dropdown.
+    private IReadOnlyDictionary<string, string> MonthOptions =>
+        Enumerable.Range(1, 12)
+            .ToDictionary(
+                month => month.ToString(CultureInfo.InvariantCulture),
+                month => CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(month));
+
+    // Returns the year options shown in the custom year dropdown.
+    private IReadOnlyDictionary<string, string> YearOptions =>
+        AvailableYears.ToDictionary(
+            year => year.ToString(CultureInfo.InvariantCulture),
+            year => year.ToString(CultureInfo.InvariantCulture));
+
+    // Returns the selected month as a string for the custom dropdown.
+    private string SelectedMonthValue => selectedMonth.ToString(CultureInfo.InvariantCulture);
+
+    // Returns the selected year as a string for the custom dropdown.
+    private string SelectedYearValue => selectedYear.ToString(CultureInfo.InvariantCulture);
+
+    // Returns the subtitle shown in the results card.
+    private string ResultsSubtitle =>
+        totalClassCount == 0
+            ? "No matching classes were found for the current filters."
+            : HasDelivererFilter
+                ? $"Showing {classes.Count} of {totalClassCount} class record{(totalClassCount == 1 ? "" : "s")} for {SelectedMonthName} {selectedYear}, filtered by {selectedDelivererFilter?.DisplayName}."
+                : $"Showing {classes.Count} of {totalClassCount} class record{(totalClassCount == 1 ? "" : "s")} for {SelectedMonthName} {selectedYear}.";
+
+    // Returns the current month name for subtitle display.
+    private string SelectedMonthName => CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(selectedMonth);
+
+    // Loads the first page of results when the page opens.
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Loads the available delivering users used by the optional filter.
+            delivererOptions = await ClassService.GetAvailableClassDeliverersAsync();
+
+            // Loads the initial class results for the current month.
+            await LoadClassesAsync();
+        }
+        catch
+        {
+            // Stores a friendly error message if the page data cannot be loaded.
+            errorMessage = "The classes page could not be loaded. Please refresh the page and try again.";
+            classes = new List<WorkshopClass>();
+            totalClassCount = 0;
+            totalPages = 1;
+            currentPage = 1;
+            isLoading = false;
+        }
+    }
+
+    // Stores the selected month from the custom dropdown safely.
+    private Task OnSelectedMonthChangedAsync(string value)
+    {
+        if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedMonth)
+            && parsedMonth >= 1
+            && parsedMonth <= 12)
+        {
+            selectedMonth = parsedMonth;
+            errorMessage = null;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    // Stores the selected year from the custom dropdown safely.
+    private Task OnSelectedYearChangedAsync(string value)
+    {
+        if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedYear))
+        {
+            selectedYear = parsedYear;
+            errorMessage = null;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    // Loads paged class results using the selected month and optional deliverer filter.
+    private async Task LoadClassesAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            totalClassCount = await ClassService.GetClassSearchCountByMonthAsync(selectedYear, selectedMonth, selectedDelivererUserId);
+
+            totalPages = totalClassCount == 0
+                ? 1
+                : (totalClassCount + PageSize - 1) / PageSize;
+
+            if (currentPage > totalPages)
+            {
+                currentPage = totalPages;
+            }
+
+            classes = await ClassService.SearchClassesByMonthAsync(selectedYear, selectedMonth, selectedDelivererUserId, currentPage, PageSize);
+        }
+        catch
+        {
+            // Stores a friendly error message if filtered results cannot be loaded.
+            errorMessage = "The filtered class results could not be loaded. Please try again.";
+            classes = new List<WorkshopClass>();
+            totalClassCount = 0;
+            totalPages = 1;
+            currentPage = 1;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    // Applies the currently selected filters and reloads the class results.
+    private async Task ApplyFiltersAsync()
+    {
+        // Stops the filter if the user typed text but did not choose a valid deliverer.
+        if (!string.IsNullOrWhiteSpace(delivererFilterSearchTerm) && selectedDelivererFilter is null)
+        {
+            errorMessage = "Please select a valid deliverer from the list, or clear the deliverer filter.";
+            return;
+        }
+
+        errorMessage = null;
+        currentPage = 1;
+        await LoadClassesAsync();
+    }
+
+    // Resets all filters back to their default values and reloads the results.
+    private async Task ClearFiltersAsync()
+    {
+        selectedYear = DateTime.Today.Year;
+        selectedMonth = DateTime.Today.Month;
+        ClearDelivererFilter();
+        currentPage = 1;
+        await LoadClassesAsync();
+    }
+
+    // Moves to the previous page of class results when possible.
+    private async Task GoToPreviousPageAsync()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            await LoadClassesAsync();
+        }
+    }
+
+    // Moves to the next page of class results when possible.
+    private async Task GoToNextPageAsync()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+            await LoadClassesAsync();
+        }
+    }
+
+    // Runs when the user types in the deliverer filter search box and updates the autocomplete results.
+    private Task HandleDelivererFilterInput(ChangeEventArgs e)
+    {
+        delivererFilterSearchTerm = e.Value?.ToString() ?? string.Empty;
+        errorMessage = null;
+        selectedDelivererFilter = null;
+        selectedDelivererUserId = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(delivererFilterSearchTerm) || delivererFilterSearchTerm.Trim().Length < 2)
+        {
+            delivererFilterSearchResults.Clear();
+            isDelivererFilterDropdownOpen = false;
+            return Task.CompletedTask;
+        }
+
+        delivererFilterSearchResults = delivererOptions
+            .Where(option => option.DisplayName.Contains(delivererFilterSearchTerm.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Take(8)
+            .ToList();
+
+        isDelivererFilterDropdownOpen = delivererFilterSearchResults.Any();
+        return Task.CompletedTask;
+    }
+
+    // Applies the chosen deliverer to the filter state.
+    private void SelectDelivererFilter(ApplicationUserOptionViewModel deliverer)
+    {
+        selectedDelivererFilter = deliverer;
+        selectedDelivererUserId = deliverer.UserId;
+        delivererFilterSearchTerm = deliverer.DisplayName;
+        delivererFilterSearchResults.Clear();
+        isDelivererFilterDropdownOpen = false;
+        errorMessage = null;
+    }
+
+    // Clears the deliverer filter search state and removes the current deliverer filter.
+    private void ClearDelivererFilter()
+    {
+        delivererFilterSearchTerm = string.Empty;
+        delivererFilterSearchResults.Clear();
+        selectedDelivererFilter = null;
+        selectedDelivererUserId = string.Empty;
+        isDelivererFilterDropdownOpen = false;
+        errorMessage = null;
+    }
+
+    // Reopens the deliverer autocomplete dropdown when the input gains focus and results still exist.
+    private void HandleDelivererFilterFocus()
+    {
+        if (delivererFilterSearchResults.Any())
+        {
+            isDelivererFilterDropdownOpen = true;
+        }
+    }
+
+    // Closes the deliverer autocomplete dropdown shortly after the input loses focus.
+    private async Task HandleDelivererFilterBlur()
+    {
+        await Task.Delay(150);
+        isDelivererFilterDropdownOpen = false;
+    }
+
+    // Returns the exact date and time when the selected class is scheduled to start.
+    private DateTime GetClassStartDateTime(WorkshopClass workshopClass)
+    {
+        return workshopClass.ClassDate.Date.Add(workshopClass.StartTime);
+    }
+
+    // Returns the exact date and time when the selected class is scheduled to finish.
+    private DateTime GetClassEndDateTime(WorkshopClass workshopClass)
+    {
+        return workshopClass.ClassDate.Date.Add(workshopClass.EndTime);
+    }
+
+    // Returns true when the class has already started and attendance should be available.
+    private bool HasClassStarted(WorkshopClass workshopClass)
+    {
+        return DateTime.Now >= GetClassStartDateTime(workshopClass);
+    }
+
+    // Returns true when the class has already finished and should no longer be editable.
+    private bool HasClassCompleted(WorkshopClass workshopClass)
+    {
+        return DateTime.Now > GetClassEndDateTime(workshopClass);
+    }
+
+    // Formats the class start and end times into one readable timetable string.
+    private string FormatClassTime(TimeSpan startTime, TimeSpan endTime)
+    {
+        var formattedStartTime = DateTime.Today.Add(startTime).ToString("hh:mm tt");
+        var formattedEndTime = DateTime.Today.Add(endTime).ToString("hh:mm tt");
+
+        return $"{formattedStartTime} - {formattedEndTime}";
+    }
+}

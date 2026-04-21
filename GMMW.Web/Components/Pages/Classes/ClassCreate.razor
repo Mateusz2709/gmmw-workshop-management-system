@@ -1,0 +1,441 @@
+﻿@page "/classes/create"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using GMMW.Web.Components.Shared
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IClassService ClassService
+@inject NavigationManager NavigationManager
+@rendermode InteractiveServer
+
+<PageTitle>Create Class</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Create Class</h1>
+            <p class="st-page-subtitle">Schedule a new workshop class and assign it to a delivering user.</p>
+        </div>
+
+        <div class="st-page-actions">
+            <a href="/classes" class="st-btn st-btn--secondary">Back to Classes</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(submitErrorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @submitErrorMessage
+        </div>
+    }
+
+    @if (showValidationMessage && string.IsNullOrWhiteSpace(submitErrorMessage))
+    {
+        <div class="st-alert st-alert--warning" role="alert">
+            Please correct the highlighted fields and try again.
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="st-card">
+            <div class="st-card__body">
+                <div class="st-alert st-alert--info mb-0" role="status">
+                    Loading class creation form...
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <EditForm Model="model"
+                  OnValidSubmit="HandleValidSubmit"
+                  OnInvalidSubmit="HandleInvalidSubmit"
+                  FormName="ClassCreate">
+            <DataAnnotationsValidator />
+
+            <fieldset disabled="@isSaving" aria-busy="@isSaving">
+                <div class="st-stack-lg">
+                    <div class="st-card st-card--allow-overflow">
+                        <div class="st-card__header">
+                            <div>
+                                <h2 class="st-card-title">Assign Deliverer</h2>
+                                <p class="st-card-subtitle">
+                                    Search by deliverer name and choose the active workshop user who will run this class.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-card__body">
+                            <div class="row g-4 align-items-start">
+                                <div class="col-12 col-xl-8">
+                                    @if (selectedDeliverer is null)
+                                    {
+                                        <div class="st-field mb-0">
+                                            <label for="deliverer-search" class="st-label">Search Deliverer</label>
+
+                                            <div class="row g-2 align-items-end">
+                                                <div class="col-12 col-lg">
+                                                    <div class="st-autocomplete">
+                                                        <input id="deliverer-search"
+                                                               class="st-input"
+                                                               type="text"
+                                                               placeholder="Type at least 2 characters"
+                                                               value="@delivererSearchTerm"
+                                                               @oninput="HandleDelivererSearchInput"
+                                                               @onfocus="HandleDelivererSearchFocus"
+                                                               @onblur="HandleDelivererSearchBlur" />
+
+                                                        @if (isDelivererDropdownOpen && delivererSearchResults.Any())
+                                                        {
+                                                            <div class="st-autocomplete__menu">
+                                                                @foreach (var deliverer in delivererSearchResults)
+                                                                {
+                                                                    <button type="button"
+                                                                            class="st-autocomplete__item"
+                                                                            @onclick="() => SelectDeliverer(deliverer)">
+                                                                        <span class="st-autocomplete__primary">@deliverer.DisplayName</span>
+                                                                    </button>
+                                                                }
+                                                            </div>
+                                                        }
+                                                    </div>
+
+                                                    <ValidationMessage For="() => model.DeliveredByUserId" class="validation-message" />
+                                                </div>
+
+                                                <div class="col-12 col-lg-auto">
+                                                    <button type="button"
+                                                            class="st-btn st-btn--secondary w-100"
+                                                            @onclick="ClearDelivererSearch"
+                                                            disabled="@(!CanClearDelivererSearch || isSaving)">
+                                                        Clear
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="st-selected-summary">
+                                            <div class="st-selected-summary__title">@selectedDeliverer.DisplayName</div>
+                                            <div class="st-selected-summary__meta">Selected deliverer for this class</div>
+                                        </div>
+
+                                        <div class="mt-3 d-flex flex-wrap gap-2">
+                                            <button type="button"
+                                                    class="st-btn st-btn--secondary"
+                                                    @onclick="ClearDelivererSearch"
+                                                    disabled="@isSaving">
+                                                Change Deliverer
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+
+                                <div class="col-12 col-xl-4">
+                                    @if (!HasSelectedDeliverer)
+                                    {
+                                        <span class="st-inline-status st-inline-status--warning">
+                                            No deliverer selected
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="st-inline-status st-inline-status--info">
+                                            Deliverer selected
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="st-card st-card--allow-overflow">
+                        <div class="st-card__header">
+                            <div>
+                                <h2 class="st-card-title">Class Details</h2>
+                                <p class="st-card-subtitle">
+                                    Enter the timetable and description details for the new class.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-card__body">
+                            <div class="row g-4">
+                                <div class="col-12">
+                                    <div class="st-field mb-0">
+                                        <label for="class-title" class="st-label">Class Title</label>
+                                        <InputText id="class-title"
+                                                   class="st-input"
+                                                   @bind-Value="model.Title" />
+                                        <ValidationMessage For="() => model.Title" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    <StDatePicker Label="Class Date"
+                                                  Value="model.ClassDate"
+                                                  ValueChanged="OnClassDateChanged" />
+                                    <ValidationMessage For="() => model.ClassDate" class="validation-message" />
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    <StTimePicker Label="Start Time"
+                                                  Value="model.StartTime"
+                                                  ValueChanged="OnStartTimeChanged" />
+                                    <ValidationMessage For="() => model.StartTime" class="validation-message" />
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    <StTimePicker Label="End Time"
+                                                  Value="model.EndTime"
+                                                  ValueChanged="OnEndTimeChanged" />
+                                    <ValidationMessage For="() => model.EndTime" class="validation-message" />
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="st-field mb-0">
+                                        <label for="description" class="st-label">Description</label>
+                                        <InputTextArea id="description"
+                                                       class="st-textarea"
+                                                       @bind-Value="model.Description" />
+                                        <ValidationMessage For="() => model.Description" class="validation-message" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                                <button type="submit"
+                                        class="st-btn st-btn--primary"
+                                        disabled="@(!HasSelectedDeliverer || isSaving)">
+                                    @(isSaving ? "Creating Class..." : "Create Class")
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </fieldset>
+        </EditForm>
+    }
+</div>
+
+@code {
+    // Stores the form model bound to the class creation page.
+    private readonly ClassCreateViewModel model = new();
+
+    // Stores all available delivering users loaded from the service.
+    private List<ApplicationUserOptionViewModel> delivererOptions = new();
+
+    // Stores the current filtered dropdown results for the deliverer search.
+    private List<ApplicationUserOptionViewModel> delivererSearchResults = new();
+
+    // Stores the currently selected delivering user shown in the summary area.
+    private ApplicationUserOptionViewModel? selectedDeliverer;
+
+    // Stores the text entered into the deliverer search input.
+    private string delivererSearchTerm = string.Empty;
+
+    // Stores a page-level error message when loading or saving fails.
+    private string? submitErrorMessage;
+
+    // Shows one short validation prompt instead of a full validation summary dump.
+    private bool showValidationMessage;
+
+    // Tracks whether the page is still loading its initial data.
+    private bool isLoading = true;
+
+    // Tracks whether the form is currently being saved.
+    private bool isSaving;
+
+    // Controls whether the custom deliverer autocomplete dropdown is visible.
+    private bool isDelivererDropdownOpen;
+
+    // True when the form has a valid selected deliverer.
+    private bool HasSelectedDeliverer =>
+        !string.IsNullOrWhiteSpace(model.DeliveredByUserId) && selectedDeliverer is not null;
+
+    // Controls whether the deliverer Clear button should be enabled.
+    private bool CanClearDelivererSearch =>
+        !string.IsNullOrWhiteSpace(delivererSearchTerm) || selectedDeliverer is not null;
+
+    // Runs automatically when the page is first initialised and loads the deliverer data.
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Loads all valid delivering users for the custom autocomplete.
+            delivererOptions = await ClassService.GetAvailableClassDeliverersAsync();
+        }
+        catch
+        {
+            // Stores a friendly error message if the delivering users cannot be loaded.
+            submitErrorMessage = "The delivering users could not be loaded. Please refresh the page and try again.";
+        }
+        finally
+        {
+            // Marks the page as finished loading whether the load succeeded or failed.
+            isLoading = false;
+        }
+    }
+
+    // Runs when the user types in the deliverer search box and updates the autocomplete results.
+    private Task HandleDelivererSearchInput(ChangeEventArgs e)
+    {
+        // Reads the latest typed value from the input event and stores it safely as text.
+        delivererSearchTerm = e.Value?.ToString() ?? string.Empty;
+
+        // Clears old top-level messages because the user is trying again.
+        submitErrorMessage = null;
+        showValidationMessage = false;
+
+        // Clears the previous selection because the user is starting a new search.
+        selectedDeliverer = null;
+        model.DeliveredByUserId = string.Empty;
+
+        // Stops early if the typed search is too short to be useful.
+        if (string.IsNullOrWhiteSpace(delivererSearchTerm) || delivererSearchTerm.Trim().Length < 2)
+        {
+            delivererSearchResults.Clear();
+            isDelivererDropdownOpen = false;
+            return Task.CompletedTask;
+        }
+
+        // Filters the loaded deliverer list in memory and keeps only a small top set of matches.
+        delivererSearchResults = delivererOptions
+            .Where(option => option.DisplayName.Contains(delivererSearchTerm.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Take(8)
+            .ToList();
+
+        // Opens the dropdown only when matching results exist.
+        isDelivererDropdownOpen = delivererSearchResults.Any();
+
+        return Task.CompletedTask;
+    }
+
+    // Applies the chosen deliverer to the form.
+    private void SelectDeliverer(ApplicationUserOptionViewModel deliverer)
+    {
+        // Stores the selected deliverer for summary display in the page UI.
+        selectedDeliverer = deliverer;
+
+        // Saves the real Identity user ID into the form model for database persistence later.
+        model.DeliveredByUserId = deliverer.UserId;
+
+        // Replaces the search text with the selected person's display name.
+        delivererSearchTerm = deliverer.DisplayName;
+
+        // Clears dropdown results and closes the menu because selection is complete.
+        delivererSearchResults.Clear();
+        isDelivererDropdownOpen = false;
+
+        // Clears old page-level messages after a valid selection.
+        submitErrorMessage = null;
+        showValidationMessage = false;
+    }
+
+    // Clears the deliverer search state and removes any current selection.
+    private void ClearDelivererSearch()
+    {
+        // Resets both the visible input and the saved selection state.
+        delivererSearchTerm = string.Empty;
+        delivererSearchResults.Clear();
+        selectedDeliverer = null;
+        model.DeliveredByUserId = string.Empty;
+        isDelivererDropdownOpen = false;
+
+        // Clears old top-level messages.
+        submitErrorMessage = null;
+        showValidationMessage = false;
+    }
+
+    // Reopens the autocomplete dropdown when the input gains focus and results still exist.
+    private void HandleDelivererSearchFocus()
+    {
+        if (delivererSearchResults.Any())
+        {
+            isDelivererDropdownOpen = true;
+        }
+    }
+
+    // Closes the deliverer autocomplete dropdown shortly after the input loses focus.
+    private async Task HandleDelivererSearchBlur()
+    {
+        // Waits briefly so a dropdown click can still register before the menu closes.
+        await Task.Delay(150);
+        isDelivererDropdownOpen = false;
+    }
+
+    // Updates the class date from the shared custom picker.
+    private Task OnClassDateChanged(DateTime? value)
+    {
+        model.ClassDate = value ?? DateTime.Today;
+        submitErrorMessage = null;
+        showValidationMessage = false;
+        return Task.CompletedTask;
+    }
+
+    // Updates the start time from the shared custom picker.
+    private Task OnStartTimeChanged(TimeSpan? value)
+    {
+        model.StartTime = value;
+        submitErrorMessage = null;
+        showValidationMessage = false;
+        return Task.CompletedTask;
+    }
+
+    // Updates the end time from the shared custom picker.
+    private Task OnEndTimeChanged(TimeSpan? value)
+    {
+        model.EndTime = value;
+        submitErrorMessage = null;
+        showValidationMessage = false;
+        return Task.CompletedTask;
+    }
+
+    // Saves the new workshop class and then redirects to the most useful next page.
+    private async Task HandleValidSubmit()
+    {
+        // Stops accidental double-submit while the save is already running.
+        if (isSaving)
+        {
+            return;
+        }
+
+        submitErrorMessage = null;
+        showValidationMessage = false;
+        isSaving = true;
+
+        try
+        {
+            // Creates the new workshop class record and gets the new primary key back.
+            var newWorkshopClassId = await ClassService.CreateWorkshopClassAsync(model);
+
+            // Redirects to the class details page after a successful save.
+            NavigationManager.NavigateTo($"/classes/details/{newWorkshopClassId}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Shows a business-rule or validation-related message from the service layer.
+            submitErrorMessage = ex.Message;
+        }
+        catch
+        {
+            // Shows a friendly fallback message for unexpected save failures.
+            submitErrorMessage = "The workshop class could not be saved. Please check the details and try again.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    // Runs when the form is submitted but validation fails.
+    private void HandleInvalidSubmit(EditContext editContext)
+    {
+        // Keeps the top message short and leaves detailed errors next to the fields.
+        submitErrorMessage = null;
+        showValidationMessage = true;
+    }
+}

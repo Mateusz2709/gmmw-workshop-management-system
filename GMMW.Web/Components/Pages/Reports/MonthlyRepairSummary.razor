@@ -1,0 +1,310 @@
+﻿@page "/reports/monthly-repair-summary"
+@rendermode InteractiveServer
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using GMMW.Web.Components.Shared
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@inject IReportService ReportService
+
+<PageTitle>Monthly Repair Summary</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Monthly Repair Summary</h1>
+            <p class="st-page-subtitle">
+                Review the number of repairs completed in a selected month and the average repair cost for that period.
+            </p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    <div class="st-card st-card--allow-overflow">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Report Filters</h2>
+                <p class="st-card-subtitle">
+                    Select a month and year to load the repair summary for that reporting period.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="row g-4 align-items-end">
+                <div class="col-12 col-md-6 col-xl-4">
+                    <StSelectPicker Label="Month"
+                                    Value="@SelectedMonthValue"
+                                    ValueChanged="OnSelectedMonthChangedAsync"
+                                    Options="MonthOptions" />
+                </div>
+
+                <div class="col-12 col-md-6 col-xl-4">
+                    <StSelectPicker Label="Year"
+                                    Value="@SelectedYearValue"
+                                    ValueChanged="OnSelectedYearChangedAsync"
+                                    Options="YearOptions" />
+                </div>
+
+                <div class="col-12 col-xl-4">
+                    <div class="d-flex flex-column flex-sm-row justify-content-xl-end gap-2">
+                        <button type="button"
+                                class="st-btn st-btn--primary"
+                                @onclick="ApplyFiltersAsync"
+                                disabled="@isLoading">
+                            Apply Filters
+                        </button>
+
+                        <button type="button"
+                                class="st-btn st-btn--secondary"
+                                @onclick="ClearFiltersAsync"
+                                disabled="@(!CanResetFilters || isLoading)">
+                            Reset Filters
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Repair Summary Results</h2>
+                <p class="st-card-subtitle">@ResultsSubtitle</p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            @if (isLoading)
+            {
+                <div class="st-alert st-alert--info" role="status">
+                    Loading repair summary results...
+                </div>
+            }
+            else if (summary.RepairCount == 0)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">No repair records found</span>
+                    Try a different month or year.
+                </div>
+            }
+            else
+            {
+                <div class="row g-4">
+                    <div class="col-12 col-md-6 col-xl-4">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Reporting Period</span>
+                                    <div class="fs-4 fw-semibold">@ReportMonthName @reportYear</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Selected reporting month and year.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-4">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Number of Repairs</span>
+                                    <div class="fs-2 fw-bold">@summary.RepairCount</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Repairs completed during this reporting period.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-12 col-xl-4">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Average Repair Cost</span>
+                                    <div class="fs-2 fw-bold">@FormatCurrency(summary.AverageRepairCost)</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Average cost of completed repairs for the selected month.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="st-card mt-4">
+                    <div class="st-card__body">
+                        <div class="row g-3 align-items-center">
+                            <div class="col-12 col-lg-8">
+                                <h3 class="st-card-title mb-2">Summary</h3>
+                                <p class="mb-0 text-muted">
+                                    @SummaryText
+                                </p>
+                            </div>
+                            <div class="col-12 col-lg-4">
+                                <div class="d-flex justify-content-lg-end">
+                                    <span class="st-inline-status st-inline-status--info">
+                                        Reporting period loaded
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // Stores the final monthly repair summary returned by the reporting service.
+    private MonthlyRepairSummaryViewModel summary = new();
+
+    // Stores a page-level error message if loading fails.
+    private string? errorMessage;
+
+    // Tracks whether the page is currently loading report data.
+    private bool isLoading = true;
+
+    // Stores the selected year in the filter controls.
+    private int selectedYear = DateTime.Today.Year;
+
+    // Stores the selected month in the filter controls.
+    private int selectedMonth = DateTime.Today.Month;
+
+    // Stores the year for the report that has actually been loaded.
+    private int reportYear = DateTime.Today.Year;
+
+    // Stores the month for the report that has actually been loaded.
+    private int reportMonth = DateTime.Today.Month;
+
+    // Controls whether Reset Filters should be enabled.
+    private bool CanResetFilters =>
+        selectedYear != DateTime.Today.Year || selectedMonth != DateTime.Today.Month;
+
+    // Returns the year options shown in the year dropdown.
+    private IEnumerable<int> AvailableYears => Enumerable.Range(DateTime.Today.Year - 2, 5);
+
+    // Returns the month options shown in the custom month dropdown.
+    private IReadOnlyDictionary<string, string> MonthOptions =>
+        Enumerable.Range(1, 12)
+            .ToDictionary(
+                month => month.ToString(CultureInfo.InvariantCulture),
+                month => CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(month));
+
+    // Returns the year options shown in the custom year dropdown.
+    private IReadOnlyDictionary<string, string> YearOptions =>
+        AvailableYears.ToDictionary(
+            year => year.ToString(CultureInfo.InvariantCulture),
+            year => year.ToString(CultureInfo.InvariantCulture));
+
+    // Returns the selected month as a string for the custom dropdown.
+    private string SelectedMonthValue => selectedMonth.ToString(CultureInfo.InvariantCulture);
+
+    // Returns the selected year as a string for the custom dropdown.
+    private string SelectedYearValue => selectedYear.ToString(CultureInfo.InvariantCulture);
+
+    // Returns the month name for the loaded report period.
+    private string ReportMonthName => CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(reportMonth);
+
+    // Returns the subtitle shown in the results card header.
+    private string ResultsSubtitle =>
+        summary.RepairCount == 0
+            ? $"No completed repairs were found for {ReportMonthName} {reportYear}."
+            : $"Showing repair count and average repair cost for {ReportMonthName} {reportYear}.";
+
+    // Returns the summary sentence shown below the metric cards.
+    private string SummaryText =>
+        $"In {ReportMonthName} {reportYear}, the workshop completed {summary.RepairCount} {(summary.RepairCount == 1 ? "repair" : "repairs")} with an average repair cost of {FormatCurrency(summary.AverageRepairCost)}.";
+
+    // Loads the default report when the page first opens.
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReportAsync();
+    }
+
+    // Stores the selected month from the custom dropdown safely.
+    private Task OnSelectedMonthChangedAsync(string value)
+    {
+        if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedMonth)
+            && parsedMonth >= 1
+            && parsedMonth <= 12)
+        {
+            selectedMonth = parsedMonth;
+            errorMessage = null;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    // Stores the selected year from the custom dropdown safely.
+    private Task OnSelectedYearChangedAsync(string value)
+    {
+        if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedYear))
+        {
+            selectedYear = parsedYear;
+            errorMessage = null;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    // Loads the monthly repair summary using the selected month and year.
+    private async Task LoadReportAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            // Requests the summary for the selected reporting period.
+            var loadedSummary = await ReportService.GetMonthlyRepairSummaryAsync(selectedMonth, selectedYear);
+
+            // Stores the loaded summary and the exact reporting period it belongs to.
+            summary = loadedSummary;
+            reportMonth = selectedMonth;
+            reportYear = selectedYear;
+        }
+        catch
+        {
+            // Resets the visible results cleanly if the report fails to load.
+            errorMessage = "The monthly repair summary could not be loaded. Please try again.";
+            summary = new MonthlyRepairSummaryViewModel();
+        }
+        finally
+        {
+            // Ends the loading state whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+
+    // Applies the selected filters and reloads the report results.
+    private async Task ApplyFiltersAsync()
+    {
+        await LoadReportAsync();
+    }
+
+    // Resets all filters back to their default values and reloads the report results.
+    private async Task ClearFiltersAsync()
+    {
+        selectedYear = DateTime.Today.Year;
+        selectedMonth = DateTime.Today.Month;
+        await LoadReportAsync();
+    }
+
+    // Formats a decimal value as a fixed GBP-style currency string.
+    private static string FormatCurrency(decimal value)
+    {
+        return $"£{value:0.00}";
+    }
+}

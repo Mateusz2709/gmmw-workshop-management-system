@@ -1,0 +1,787 @@
+﻿@page "/reports/attendance"
+@rendermode InteractiveServer
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using GMMW.Web.Components.Shared
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@inject IAttendanceService AttendanceService
+@inject IClassService ClassService
+
+<PageTitle>Attendance Reports</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Attendance Reports</h1>
+            <p class="st-page-subtitle">
+                Review attendance records by month and optionally narrow the results to one deliverer.
+            </p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    <div class="st-card st-card--allow-overflow">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Report Filters</h2>
+                <p class="st-card-subtitle">
+                    Select a month and year, and optionally choose a deliverer to refine the attendance results.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="row g-4 align-items-end">
+                <div class="col-12 col-md-4 col-xl-3">
+                    <StSelectPicker Label="Month"
+                                    Value="@SelectedMonthValue"
+                                    ValueChanged="OnSelectedMonthChangedAsync"
+                                    Options="MonthOptions" />
+                </div>
+
+                <div class="col-12 col-md-4 col-xl-3">
+                    <StSelectPicker Label="Year"
+                                    Value="@SelectedYearValue"
+                                    ValueChanged="OnSelectedYearChangedAsync"
+                                    Options="YearOptions" />
+                </div>
+
+                <div class="col-12 col-xl-6">
+                    <div class="st-field mb-0">
+                        <label for="deliverer-filter-search" class="st-label">Deliverer (Optional)</label>
+
+                        <div class="row g-2 align-items-end">
+                            <div class="col-12 col-sm">
+                                @if (selectedDelivererFilter is null)
+                                {
+                                    <div class="st-autocomplete">
+                                        <input id="deliverer-filter-search"
+                                               class="st-input"
+                                               type="text"
+                                               placeholder="Type at least 2 characters"
+                                               value="@delivererFilterSearchTerm"
+                                               @oninput="HandleDelivererFilterInput"
+                                               @onfocus="HandleDelivererFilterFocus"
+                                               @onblur="HandleDelivererFilterBlur" />
+
+                                        @if (isDelivererFilterDropdownOpen && delivererFilterSearchResults.Any())
+                                        {
+                                            <div class="st-autocomplete__menu">
+                                                @foreach (var deliverer in delivererFilterSearchResults)
+                                                {
+                                                    <button type="button"
+                                                            class="st-autocomplete__item"
+                                                            @onclick="() => SelectDelivererFilter(deliverer)">
+                                                        <span class="st-autocomplete__primary">@deliverer.DisplayName</span>
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="st-selected-summary">
+                                        <div class="st-selected-summary__title">@selectedDelivererFilter.DisplayName</div>
+                                        <div class="st-selected-summary__meta">Deliverer filter applied</div>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="col-12 col-sm-auto">
+                                <button type="button"
+                                        class="st-btn st-btn--secondary w-100"
+                                        @onclick="ClearDelivererFilter"
+                                        disabled="@(!CanClearDelivererFilter || isLoading)">
+                                    @(selectedDelivererFilter is null ? "Clear" : "Change")
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="st-muted small mt-2">
+                            Start typing at least 2 characters, then select a deliverer from the list.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="d-flex flex-column flex-sm-row justify-content-end gap-2 pt-2">
+                        <button type="button"
+                                class="st-btn st-btn--primary"
+                                @onclick="ApplyFiltersAsync"
+                                disabled="@isLoading">
+                            Apply Filters
+                        </button>
+
+                        <button type="button"
+                                class="st-btn st-btn--secondary"
+                                @onclick="ClearFiltersAsync"
+                                disabled="@isLoading">
+                            Reset Filters
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 w-100">
+                <div>
+                    <h2 class="st-card-title">@ResultsTitle</h2>
+                    <p class="st-card-subtitle">@ResultsSubtitle</p>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button"
+                            class="@(IsAttendanceListView ? "st-btn st-btn--primary" : "st-btn st-btn--secondary")"
+                            @onclick="() => SetReportView(AttendanceReportView.List)"
+                            disabled="@isLoading">
+                        Attendance List
+                    </button>
+
+                    <button type="button"
+                            class="@(IsAttendanceCountView ? "st-btn st-btn--primary" : "st-btn st-btn--secondary")"
+                            @onclick="() => SetReportView(AttendanceReportView.CountByClass)"
+                            disabled="@isLoading">
+                        Attendance Count by Class
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            @if (isLoading)
+            {
+                <div class="st-alert st-alert--info" role="status">
+                    Loading attendance results...
+                </div>
+            }
+            else if (!hasLoadedReport)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">Report not loaded</span>
+                    Apply the filters to load attendance results.
+                </div>
+            }
+            else if (ShowCurrentViewEmptyState)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">@EmptyStateTitle</span>
+                    @EmptyStateBody
+                </div>
+            }
+            else
+            {
+                <div class="row g-4">
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Reporting Period</span>
+                                    <div class="fs-4 fw-semibold">@ReportMonthName @reportYear</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Month and year currently loaded for this report.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Deliverer Scope</span>
+                                    <div class="fs-4 fw-semibold">@LoadedDelivererScopeName</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Current deliverer scope used for the loaded report.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Attendance Records</span>
+                                    <div class="fs-2 fw-bold">@totalAttendanceCount</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Total attendance rows matching the loaded report filters.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Classes Counted</span>
+                                    <div class="fs-2 fw-bold">@attendanceCountItems.Count</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Classes included in the loaded attendance summary.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="st-card mt-4">
+                    <div class="st-card__body">
+                        <div class="row g-3 align-items-center">
+                            <div class="col-12 col-lg-8">
+                                <h3 class="st-card-title mb-2">Summary</h3>
+                                <p class="mb-0 text-muted">
+                                    @SummaryText
+                                </p>
+                            </div>
+
+                            <div class="col-12 col-lg-4">
+                                <div class="d-flex justify-content-lg-end">
+                                    <span class="st-inline-status st-inline-status--info">
+                                        Reporting period loaded
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                @if (IsAttendanceListView)
+                {
+                    <div class="st-card mt-4">
+                        <div class="st-card__header">
+                            <div>
+                                <h3 class="st-card-title">Attendance Records</h3>
+                                <p class="st-card-subtitle">
+                                    Detailed attendance rows for the loaded reporting period and deliverer scope.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-card__body p-0">
+                            <div class="st-table-shell">
+                                <div class="table-responsive">
+                                    <table class="st-table align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Motorist</th>
+                                                <th>Class</th>
+                                                <th>Attendance Date</th>
+                                                <th>Deliverer</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var item in attendanceItems)
+                                            {
+                                                <tr>
+                                                    <td>@item.MotoristName</td>
+                                                    <td>
+                                                        <div class="fw-semibold">@item.ClassTitle</div>
+                                                        <div class="st-muted small">@item.ClassDate.ToString("dd/MM/yyyy")</div>
+                                                    </td>
+                                                    <td>@item.AttendanceDate.ToString("dd/MM/yyyy HH:mm")</td>
+                                                    <td>@item.VolunteerName</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (ShowAttendancePagination)
+                    {
+                        <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mt-4 pt-4 border-top">
+                            <p class="mb-0">Page @attendanceCurrentPage of @attendanceTotalPages</p>
+
+                            <div class="d-flex gap-2">
+                                <button type="button"
+                                        class="st-btn st-btn--secondary"
+                                        @onclick="GoToPreviousAttendancePageAsync"
+                                        disabled="@(!CanGoToPreviousAttendancePage)">
+                                    Previous
+                                </button>
+
+                                <button type="button"
+                                        class="st-btn st-btn--secondary"
+                                        @onclick="GoToNextAttendancePageAsync"
+                                        disabled="@(!CanGoToNextAttendancePage)">
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="st-card mt-4">
+                        <div class="st-card__header">
+                            <div>
+                                <h3 class="st-card-title">Attendance Count by Class</h3>
+                                <p class="st-card-subtitle">
+                                    Grouped attendance totals for each class in the loaded reporting period and deliverer scope.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-card__body p-0">
+                            <div class="st-table-shell">
+                                <div class="table-responsive">
+                                    <table class="st-table align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Class</th>
+                                                <th>Deliverer</th>
+                                                <th class="text-end">Attendance Count</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var item in attendanceCountItems)
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        <div class="fw-semibold">@item.ClassTitle</div>
+                                                        <div class="st-muted small">@item.ClassDate.ToString("dd/MM/yyyy")</div>
+                                                    </td>
+                                                    <td>@item.VolunteerName</td>
+                                                    <td class="text-end">@item.AttendanceCount</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private enum AttendanceReportView
+    {
+        List,
+        CountByClass
+    }
+
+    // Stores the detailed attendance rows shown in Attendance List view.
+    private List<AttendanceReportItemViewModel> attendanceItems = new();
+
+    // Stores the grouped class attendance totals shown in Attendance Count by Class view.
+    private List<ClassAttendanceCountItemViewModel> attendanceCountItems = new();
+
+    // Stores the available delivering users for the optional filter.
+    private List<ApplicationUserOptionViewModel> delivererOptions = new();
+
+    // Stores the current filtered dropdown results for the deliverer filter search.
+    private List<ApplicationUserOptionViewModel> delivererFilterSearchResults = new();
+
+    // Stores the currently selected deliverer in the filter UI.
+    private ApplicationUserOptionViewModel? selectedDelivererFilter;
+
+    // Stores the text entered into the deliverer filter search input.
+    private string delivererFilterSearchTerm = string.Empty;
+
+    // Stores the currently selected deliverer ID in the filter UI.
+    private string selectedDelivererUserId = string.Empty;
+
+    // Stores a page-level error message if loading fails.
+    private string? errorMessage;
+
+    // Tracks whether the page is currently loading report data.
+    private bool isLoading = true;
+
+    // Tracks whether at least one report load has completed successfully.
+    private bool hasLoadedReport;
+
+    // Controls whether the custom deliverer autocomplete dropdown is visible.
+    private bool isDelivererFilterDropdownOpen;
+
+    // Stores the selected year in the filter UI.
+    private int selectedYear = DateTime.Today.Year;
+
+    // Stores the selected month in the filter UI.
+    private int selectedMonth = DateTime.Today.Month;
+
+    // Stores the year for the report that has actually been loaded.
+    private int reportYear = DateTime.Today.Year;
+
+    // Stores the month for the report that has actually been loaded.
+    private int reportMonth = DateTime.Today.Month;
+
+    // Stores the deliverer ID for the report that has actually been loaded.
+    private string reportDelivererUserId = string.Empty;
+
+    // Stores the deliverer display name for the report that has actually been loaded.
+    private string reportDelivererDisplayName = string.Empty;
+
+    // Stores the currently selected report view mode.
+    private AttendanceReportView currentView = AttendanceReportView.List;
+
+    // Stores the current page number for Attendance List pagination.
+    private int attendanceCurrentPage = 1;
+
+    // Defines how many attendance rows are shown on one page.
+    private const int AttendancePageSize = 10;
+
+    // Stores the total number of attendance rows matching the loaded filters.
+    private int totalAttendanceCount;
+
+    // Stores the total number of pages for Attendance List pagination.
+    private int attendanceTotalPages = 1;
+
+    // Controls whether Attendance List pagination buttons should be shown.
+    private bool ShowAttendancePagination => IsAttendanceListView && totalAttendanceCount > AttendancePageSize;
+
+    // Controls whether the deliverer clear/change button should be enabled.
+    private bool CanClearDelivererFilter =>
+        !string.IsNullOrWhiteSpace(delivererFilterSearchTerm) || selectedDelivererFilter is not null;
+
+    // Controls whether the previous attendance page button should be enabled.
+    private bool CanGoToPreviousAttendancePage => !isLoading && attendanceCurrentPage > 1;
+
+    // Controls whether the next attendance page button should be enabled.
+    private bool CanGoToNextAttendancePage => !isLoading && attendanceCurrentPage < attendanceTotalPages;
+
+    // Returns the year options shown in the year dropdown.
+    private IEnumerable<int> AvailableYears => Enumerable.Range(DateTime.Today.Year - 2, 5);
+
+    // Returns the month options shown in the custom month dropdown.
+    private IReadOnlyDictionary<string, string> MonthOptions =>
+        Enumerable.Range(1, 12)
+            .ToDictionary(
+                month => month.ToString(CultureInfo.InvariantCulture),
+                month => CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(month));
+
+    // Returns the year options shown in the custom year dropdown.
+    private IReadOnlyDictionary<string, string> YearOptions =>
+        AvailableYears.ToDictionary(
+            year => year.ToString(CultureInfo.InvariantCulture),
+            year => year.ToString(CultureInfo.InvariantCulture));
+
+    // Returns the selected month as a string for the custom dropdown.
+    private string SelectedMonthValue => selectedMonth.ToString(CultureInfo.InvariantCulture);
+
+    // Returns the selected year as a string for the custom dropdown.
+    private string SelectedYearValue => selectedYear.ToString(CultureInfo.InvariantCulture);
+
+    // Returns the month name for the loaded report period.
+    private string ReportMonthName => CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(reportMonth);
+
+    // Returns true when Attendance List is the active view.
+    private bool IsAttendanceListView => currentView == AttendanceReportView.List;
+
+    // Returns true when Attendance Count by Class is the active view.
+    private bool IsAttendanceCountView => currentView == AttendanceReportView.CountByClass;
+
+    // Returns the display text for the loaded deliverer scope.
+    private string LoadedDelivererScopeName =>
+        string.IsNullOrWhiteSpace(reportDelivererUserId)
+            ? "All Deliverers"
+            : reportDelivererDisplayName;
+
+    // Returns the results card title based on the active report view.
+    private string ResultsTitle =>
+        IsAttendanceListView
+            ? "Attendance List"
+            : "Attendance Count by Class";
+
+    // Returns the results card subtitle based on the active report view and loaded report state.
+    private string ResultsSubtitle =>
+        !hasLoadedReport
+            ? "Attendance results will appear here after the report loads."
+            : IsAttendanceListView
+                ? $"Detailed attendance records for {ReportMonthName} {reportYear} ({LoadedDelivererScopeName})."
+                : $"Summary attendance counts for classes in {ReportMonthName} {reportYear} ({LoadedDelivererScopeName}).";
+
+    // Returns true when the currently selected view has no rows to show.
+    private bool ShowCurrentViewEmptyState =>
+        IsAttendanceListView
+            ? attendanceItems.Count == 0
+            : attendanceCountItems.Count == 0;
+
+    // Returns the empty-state title for the current view.
+    private string EmptyStateTitle =>
+        IsAttendanceListView
+            ? "No attendance records found"
+            : "No attendance counts found";
+
+    // Returns the empty-state body for the current view.
+    private string EmptyStateBody =>
+        IsAttendanceListView
+            ? "Try a different month or deliverer filter."
+            : "Try a different month or deliverer filter.";
+
+    // Returns the summary sentence shown below the cards.
+    private string SummaryText =>
+        string.IsNullOrWhiteSpace(reportDelivererUserId)
+            ? $"In {ReportMonthName} {reportYear}, the attendance report contains {totalAttendanceCount} {(totalAttendanceCount == 1 ? "record" : "records")} across {attendanceCountItems.Count} {(attendanceCountItems.Count == 1 ? "class" : "classes")} for all deliverers."
+            : $"In {ReportMonthName} {reportYear}, the attendance report contains {totalAttendanceCount} {(totalAttendanceCount == 1 ? "record" : "records")} across {attendanceCountItems.Count} {(attendanceCountItems.Count == 1 ? "class" : "classes")} for {reportDelivererDisplayName}.";
+
+    // Runs automatically when the page first loads.
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Loads the available delivering users used by the optional filter.
+            delivererOptions = await ClassService.GetAvailableClassDeliverersAsync();
+
+            // Loads the initial report results for the current month.
+            reportYear = selectedYear;
+            reportMonth = selectedMonth;
+            reportDelivererUserId = selectedDelivererUserId;
+            reportDelivererDisplayName = string.Empty;
+
+            await LoadReportAsync();
+        }
+        catch
+        {
+            // Resets the page state cleanly if the page cannot load at all.
+            errorMessage = "The attendance reports page could not be loaded. Please refresh the page and try again.";
+            attendanceItems = new List<AttendanceReportItemViewModel>();
+            attendanceCountItems = new List<ClassAttendanceCountItemViewModel>();
+            totalAttendanceCount = 0;
+            attendanceTotalPages = 1;
+            attendanceCurrentPage = 1;
+            isLoading = false;
+            hasLoadedReport = false;
+        }
+    }
+
+    // Stores the selected month from the custom dropdown safely.
+    private Task OnSelectedMonthChangedAsync(string value)
+    {
+        if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedMonth)
+            && parsedMonth >= 1
+            && parsedMonth <= 12)
+        {
+            selectedMonth = parsedMonth;
+            errorMessage = null;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    // Stores the selected year from the custom dropdown safely.
+    private Task OnSelectedYearChangedAsync(string value)
+    {
+        if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedYear))
+        {
+            selectedYear = parsedYear;
+            errorMessage = null;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    // Loads both attendance report views using the currently loaded report state.
+    private async Task LoadReportAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            // Gets the total detailed attendance count first so pagination can be calculated correctly.
+            totalAttendanceCount = await AttendanceService.GetAttendanceReportCountAsync(
+                reportYear,
+                reportMonth,
+                reportDelivererUserId);
+
+            // Calculates how many pages exist for the detailed attendance list.
+            attendanceTotalPages = totalAttendanceCount == 0
+                ? 1
+                : (totalAttendanceCount + AttendancePageSize - 1) / AttendancePageSize;
+
+            // Pulls the current page back into range if the result size changed.
+            if (attendanceCurrentPage > attendanceTotalPages)
+            {
+                attendanceCurrentPage = attendanceTotalPages;
+            }
+
+            if (attendanceCurrentPage < 1)
+            {
+                attendanceCurrentPage = 1;
+            }
+
+            // Loads the detailed attendance rows for the current report scope.
+            attendanceItems = await AttendanceService.SearchAttendanceReportAsync(
+                reportYear,
+                reportMonth,
+                reportDelivererUserId,
+                attendanceCurrentPage,
+                AttendancePageSize);
+
+            // Loads the grouped attendance-by-class summary for the same report scope.
+            attendanceCountItems = await AttendanceService.GetAttendanceCountByClassReportAsync(
+                reportYear,
+                reportMonth,
+                reportDelivererUserId);
+
+            hasLoadedReport = true;
+        }
+        catch
+        {
+            // Keeps old results if a later reload fails, but clears everything on the first load failure.
+            errorMessage = "The attendance report results could not be loaded. Please try again.";
+
+            if (!hasLoadedReport)
+            {
+                attendanceItems = new List<AttendanceReportItemViewModel>();
+                attendanceCountItems = new List<ClassAttendanceCountItemViewModel>();
+                totalAttendanceCount = 0;
+                attendanceTotalPages = 1;
+                attendanceCurrentPage = 1;
+            }
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    // Changes the active report view without reloading the filters.
+    private void SetReportView(AttendanceReportView view)
+    {
+        currentView = view;
+    }
+
+    // Applies the selected filters and reloads the report results.
+    private async Task ApplyFiltersAsync()
+    {
+        // Stops the load if the typed deliverer text was not chosen from the list.
+        if (!string.IsNullOrWhiteSpace(delivererFilterSearchTerm) && selectedDelivererFilter is null)
+        {
+            errorMessage = "Please select a valid deliverer from the list, or clear the deliverer filter.";
+            return;
+        }
+
+        errorMessage = null;
+        attendanceCurrentPage = 1;
+
+        // Copies the filter UI values into the report state that is actually loaded.
+        reportYear = selectedYear;
+        reportMonth = selectedMonth;
+        reportDelivererUserId = selectedDelivererUserId;
+        reportDelivererDisplayName = selectedDelivererFilter?.DisplayName ?? string.Empty;
+
+        await LoadReportAsync();
+    }
+
+    // Resets all filters back to their default values and reloads the report results.
+    private async Task ClearFiltersAsync()
+    {
+        selectedYear = DateTime.Today.Year;
+        selectedMonth = DateTime.Today.Month;
+        ClearDelivererFilter();
+        attendanceCurrentPage = 1;
+
+        reportYear = selectedYear;
+        reportMonth = selectedMonth;
+        reportDelivererUserId = string.Empty;
+        reportDelivererDisplayName = string.Empty;
+
+        await LoadReportAsync();
+    }
+
+    // Moves to the previous page of Attendance List results when possible.
+    private async Task GoToPreviousAttendancePageAsync()
+    {
+        if (attendanceCurrentPage > 1)
+        {
+            attendanceCurrentPage--;
+            await LoadReportAsync();
+        }
+    }
+
+    // Moves to the next page of Attendance List results when possible.
+    private async Task GoToNextAttendancePageAsync()
+    {
+        if (attendanceCurrentPage < attendanceTotalPages)
+        {
+            attendanceCurrentPage++;
+            await LoadReportAsync();
+        }
+    }
+
+    // Runs when the user types in the deliverer filter search box and updates the autocomplete results.
+    private Task HandleDelivererFilterInput(ChangeEventArgs e)
+    {
+        delivererFilterSearchTerm = e.Value?.ToString() ?? string.Empty;
+        errorMessage = null;
+        selectedDelivererFilter = null;
+        selectedDelivererUserId = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(delivererFilterSearchTerm) || delivererFilterSearchTerm.Trim().Length < 2)
+        {
+            delivererFilterSearchResults.Clear();
+            isDelivererFilterDropdownOpen = false;
+            return Task.CompletedTask;
+        }
+
+        // Filters the loaded deliverer list in memory and keeps only a small top set of matches.
+        delivererFilterSearchResults = delivererOptions
+            .Where(option => option.DisplayName.Contains(delivererFilterSearchTerm.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Take(8)
+            .ToList();
+
+        isDelivererFilterDropdownOpen = delivererFilterSearchResults.Any();
+        return Task.CompletedTask;
+    }
+
+    // Applies the chosen deliverer to the filter state.
+    private void SelectDelivererFilter(ApplicationUserOptionViewModel deliverer)
+    {
+        selectedDelivererFilter = deliverer;
+        selectedDelivererUserId = deliverer.UserId;
+        delivererFilterSearchTerm = deliverer.DisplayName;
+        delivererFilterSearchResults.Clear();
+        isDelivererFilterDropdownOpen = false;
+        errorMessage = null;
+    }
+
+    // Clears the deliverer filter search state and removes any current deliverer filter.
+    private void ClearDelivererFilter()
+    {
+        delivererFilterSearchTerm = string.Empty;
+        delivererFilterSearchResults.Clear();
+        selectedDelivererFilter = null;
+        selectedDelivererUserId = string.Empty;
+        isDelivererFilterDropdownOpen = false;
+        errorMessage = null;
+    }
+
+    // Reopens the deliverer autocomplete dropdown when the input gains focus and results still exist.
+    private void HandleDelivererFilterFocus()
+    {
+        if (delivererFilterSearchResults.Any())
+        {
+            isDelivererFilterDropdownOpen = true;
+        }
+    }
+
+    // Closes the deliverer autocomplete dropdown shortly after the input loses focus.
+    private async Task HandleDelivererFilterBlur()
+    {
+        await Task.Delay(150);
+        isDelivererFilterDropdownOpen = false;
+    }
+}

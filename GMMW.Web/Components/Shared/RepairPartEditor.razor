@@ -1,0 +1,718 @@
+﻿@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Forms
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.Enums
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@inject IRepairPartService RepairPartService
+
+<div class="st-card">
+    <div class="st-card__header">
+        <div>
+            <h2 class="st-card-title">Used Parts</h2>
+            <p class="st-card-subtitle">Add, review, and manage parts linked to this repair.</p>
+        </div>
+    </div>
+
+    <div class="st-card__body">
+        @if (!isLoading && string.IsNullOrWhiteSpace(errorMessage) && RepairId > 0)
+        {
+            @if (!string.IsNullOrWhiteSpace(successMessage))
+            {
+                <div class="st-alert st-alert--success mb-3" role="status" aria-live="polite">
+                    @successMessage
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(createErrorMessage))
+            {
+                <div class="st-alert st-alert--danger mb-3" role="alert">
+                    @createErrorMessage
+                </div>
+            }
+
+            <EditForm Model="createModel" OnValidSubmit="HandleCreatePartSubmit">
+                <DataAnnotationsValidator />
+
+                <fieldset disabled="@isCreateBusy" aria-busy="@isCreateBusy">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <div class="st-field">
+                                <label class="st-label" for="part-name">Part Name</label>
+                                <InputText id="part-name" class="st-input" @bind-Value="createModel.PartName" />
+                                <ValidationMessage For="() => createModel.PartName" class="validation-message" />
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <div class="st-field mb-0">
+                                <label for="part-type-trigger" class="st-label">Part Type</label>
+
+                                <div class="st-dropdown">
+                                    <button id="part-type-trigger"
+                                            type="button"
+                                            class="st-select st-dropdown__trigger"
+                                            @onclick="TogglePartTypeDropdown"
+                                            aria-expanded="@isPartTypeDropdownOpen"
+                                            disabled="@isCreateBusy">
+                                        <span>@SelectedPartTypeText</span>
+                                        <span class="st-dropdown__chevron">▾</span>
+                                    </button>
+
+                                    @if (isPartTypeDropdownOpen)
+                                    {
+                                        <button type="button"
+                                                class="st-dropdown__backdrop"
+                                                @onclick="ClosePartTypeDropdown"
+                                                aria-label="Close part type menu"></button>
+
+                                        <div class="st-dropdown__menu">
+                                            @foreach (var partType in Enum.GetValues<PartType>())
+                                            {
+                                                <button type="button"
+                                                        class="st-dropdown__item"
+                                                        @onclick="() => SelectPartType(partType)">
+                                                    @partType
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+
+                                <ValidationMessage For="() => createModel.PartType" class="validation-message" />
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <div class="st-field">
+                                <label class="st-label" for="quantity">Quantity</label>
+                                <InputNumber id="quantity" class="st-input" @bind-Value="createModel.Quantity" />
+                                <ValidationMessage For="() => createModel.Quantity" class="validation-message" />
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <div class="st-field">
+                                <label class="st-label" for="unit-cost">Unit Cost</label>
+                                <InputNumber id="unit-cost" class="st-input" @bind-Value="createModel.UnitCost" />
+                                <ValidationMessage For="() => createModel.UnitCost" class="validation-message" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                        <button type="submit" class="st-btn st-btn--primary" disabled="@isCreateBusy">
+                            @(isCreateBusy ? "Adding Part..." : "Add Part")
+                        </button>
+                    </div>
+                </fieldset>
+            </EditForm>
+        }
+
+        @if (isLoading)
+        {
+            <div class="st-alert st-alert--info mt-4" role="status">
+                Loading repair parts...
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            <div class="st-alert st-alert--danger mt-4" role="alert">
+                @errorMessage
+            </div>
+        }
+        else if (parts.Count == 0)
+        {
+            <div class="st-empty mt-4">
+                <span class="st-empty__title">No parts added yet</span>
+                No repair parts are currently linked to this repair.
+            </div>
+        }
+        else
+        {
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mt-4 mb-3">
+                <p class="st-card-subtitle mb-0">
+                    These part rows are currently linked to this repair.
+                </p>
+
+                <div class="st-inline-status st-inline-status--info">
+                    Total parts cost: @totalPartsCost.ToString("C")
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(deleteErrorMessage))
+            {
+                <div class="st-alert st-alert--danger mb-3" role="alert">
+                    @deleteErrorMessage
+                </div>
+            }
+
+            @if (pendingDeletePartId.HasValue)
+            {
+                <div class="st-alert st-alert--warning mb-3" role="alert">
+                    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
+                        <span>Are you sure you want to remove this repair part?</span>
+
+                        <div class="d-flex flex-column flex-sm-row gap-2">
+                            <button type="button"
+                                    class="st-btn st-btn--danger"
+                                    @onclick="ConfirmDeletePartAsync"
+                                    disabled="@isDeleteBusy">
+                                @(isDeleteBusy ? "Removing..." : "Remove Part")
+                            </button>
+
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="CancelDeletePart"
+                                    disabled="@isDeleteBusy">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (editingPartId.HasValue)
+            {
+                <div class="st-card mb-3">
+                    <div class="st-card__header">
+                        <div>
+                            <h3 class="st-card-title">Edit Repair Part</h3>
+                            <p class="st-card-subtitle">Update the selected part row and keep the repair cost accurate.</p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        @if (!string.IsNullOrWhiteSpace(editErrorMessage))
+                        {
+                            <div class="st-alert st-alert--danger mb-3" role="alert">
+                                @editErrorMessage
+                            </div>
+                        }
+
+                        <EditForm Model="editModel" OnValidSubmit="HandleEditPartSubmit">
+                            <DataAnnotationsValidator />
+
+                            <fieldset disabled="@isEditBusy" aria-busy="@isEditBusy">
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-6">
+                                        <div class="st-field">
+                                            <label class="st-label" for="edit-part-name">Part Name</label>
+                                            <InputText id="edit-part-name" class="st-input" @bind-Value="editModel.PartName" />
+                                            <ValidationMessage For="() => editModel.PartName" class="validation-message" />
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12 col-md-6">
+                                        <div class="st-field mb-0">
+                                            <label for="edit-part-type-trigger" class="st-label">Part Type</label>
+
+                                            <div class="st-dropdown">
+                                                <button id="edit-part-type-trigger"
+                                                        type="button"
+                                                        class="st-select st-dropdown__trigger"
+                                                        @onclick="ToggleEditPartTypeDropdown"
+                                                        aria-expanded="@isEditPartTypeDropdownOpen"
+                                                        disabled="@isEditBusy">
+                                                    <span>@SelectedEditPartTypeText</span>
+                                                    <span class="st-dropdown__chevron">▾</span>
+                                                </button>
+
+                                                @if (isEditPartTypeDropdownOpen)
+                                                {
+                                                    <button type="button"
+                                                            class="st-dropdown__backdrop"
+                                                            @onclick="CloseEditPartTypeDropdown"
+                                                            aria-label="Close edit part type menu"></button>
+
+                                                    <div class="st-dropdown__menu">
+                                                        @foreach (var partType in Enum.GetValues<PartType>())
+                                                        {
+                                                            <button type="button"
+                                                                    class="st-dropdown__item"
+                                                                    @onclick="() => SelectEditPartType(partType)">
+                                                                @partType
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+
+                                            <ValidationMessage For="() => editModel.PartType" class="validation-message" />
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12 col-md-6">
+                                        <div class="st-field">
+                                            <label class="st-label" for="edit-quantity">Quantity</label>
+                                            <InputNumber id="edit-quantity" class="st-input" @bind-Value="editModel.Quantity" />
+                                            <ValidationMessage For="() => editModel.Quantity" class="validation-message" />
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12 col-md-6">
+                                        <div class="st-field">
+                                            <label class="st-label" for="edit-unit-cost">Unit Cost</label>
+                                            <InputNumber id="edit-unit-cost" class="st-input" @bind-Value="editModel.UnitCost" />
+                                            <ValidationMessage For="() => editModel.UnitCost" class="validation-message" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                                    <button type="button"
+                                            class="st-btn st-btn--secondary"
+                                            @onclick="CancelEditPart"
+                                            disabled="@isEditBusy">
+                                        Cancel
+                                    </button>
+
+                                    <button type="submit" class="st-btn st-btn--primary" disabled="@isEditBusy">
+                                        @(isEditBusy ? "Saving Changes..." : "Save Changes")
+                                    </button>
+                                </div>
+                            </fieldset>
+                        </EditForm>
+                    </div>
+                </div>
+            }
+
+            <div class="st-table-shell">
+                <div class="table-responsive">
+                    <table class="st-table">
+                        <thead>
+                            <tr>
+                                <th>Part Name</th>
+                                <th>Type</th>
+                                <th>Quantity</th>
+                                <th>Unit Cost</th>
+                                <th>Line Total</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var part in parts)
+                            {
+                                <tr>
+                                    <td>@part.PartName</td>
+                                    <td>@part.PartType</td>
+                                    <td>@part.Quantity</td>
+                                    <td>@part.UnitCost.ToString("C")</td>
+                                    <td>@part.LineTotal.ToString("C")</td>
+                                    <td class="text-end">
+                                        <div class="d-flex justify-content-end gap-2">
+                                            <button type="button"
+                                                    class="st-btn st-btn--secondary"
+                                                    @onclick="() => BeginEditPartAsync(part.RepairPartId)"
+                                                    disabled="@IsAnyBusy">
+                                                Edit
+                                            </button>
+
+                                            <button type="button"
+                                                    class="st-btn st-btn--danger"
+                                                    @onclick="() => RequestDeletePart(part.RepairPartId)"
+                                                    disabled="@IsAnyBusy">
+                                                Remove
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int RepairId { get; set; }
+
+    private List<RepairPart> parts = new();
+    private decimal totalPartsCost;
+    private bool isLoading;
+    private string? errorMessage;
+
+    // Stores the ID of the repair part row currently being edited.
+    private int? editingPartId;
+
+    // Stores the edit-form model used when the user edits an existing repair part row.
+    private RepairPartEditViewModel editModel = new();
+
+    // Stores a form-level error message for edit actions without replacing the main component load error.
+    private string? editErrorMessage;
+
+    // Stores the ID of the repair part row currently waiting for delete confirmation.
+    private int? pendingDeletePartId;
+
+    // Stores a delete-specific error message without replacing the main component load error.
+    private string? deleteErrorMessage;
+
+    // Stores a form-level error message for add-part actions without replacing the main load error state.
+    private string? createErrorMessage;
+
+    // Stores the create-form model used to add a new repair part row.
+    private RepairPartCreateViewModel createModel = new();
+
+    // Stores a success message shown after successful actions.
+    private string? successMessage;
+
+    // Tracks whether the custom part-type dropdown menu is currently open.
+    private bool isPartTypeDropdownOpen;
+
+    // Tracks whether the custom edit part-type dropdown menu is currently open.
+    private bool isEditPartTypeDropdownOpen;
+
+    // Tracks whether the create action is currently saving.
+    private bool isCreateBusy;
+
+    // Tracks whether the edit action is currently saving.
+    private bool isEditBusy;
+
+    // Tracks whether the delete action is currently saving.
+    private bool isDeleteBusy;
+
+    // Returns true when any create, edit, or delete action is currently running.
+    private bool IsAnyBusy => isCreateBusy || isEditBusy || isDeleteBusy;
+
+    // Returns the currently selected part type as the text shown on the dropdown trigger button.
+    private string SelectedPartTypeText => createModel.PartType.ToString();
+
+    // Returns the currently selected edit part type as the text shown on the edit dropdown trigger button.
+    private string SelectedEditPartTypeText => editModel.PartType.ToString();
+
+    // Starts the delete-confirmation flow for one repair part row.
+    private void RequestDeletePart(int repairPartId)
+    {
+        successMessage = null;
+        deleteErrorMessage = null;
+        editErrorMessage = null;
+
+        editingPartId = null;
+        editModel = new RepairPartEditViewModel();
+        isEditPartTypeDropdownOpen = false;
+
+        pendingDeletePartId = repairPartId;
+    }
+
+    // Cancels the pending delete action without removing anything.
+    private void CancelDeletePart()
+    {
+        pendingDeletePartId = null;
+        deleteErrorMessage = null;
+    }
+
+    // Deletes the selected repair part row after the user confirms the action.
+    private async Task ConfirmDeletePartAsync()
+    {
+        if (!pendingDeletePartId.HasValue || isDeleteBusy)
+        {
+            return;
+        }
+
+        isDeleteBusy = true;
+        deleteErrorMessage = null;
+        successMessage = null;
+
+        try
+        {
+            await RepairPartService.DeleteRepairPartAsync(pendingDeletePartId.Value);
+
+            try
+            {
+                await ReloadPartsAsync();
+            }
+            catch
+            {
+                pendingDeletePartId = null;
+                deleteErrorMessage = "Repair part was removed, but the list could not be refreshed.";
+                return;
+            }
+
+            pendingDeletePartId = null;
+            successMessage = "Repair part removed successfully.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            deleteErrorMessage = ex.Message;
+        }
+        catch
+        {
+            deleteErrorMessage = "Repair part could not be removed.";
+        }
+        finally
+        {
+            isDeleteBusy = false;
+        }
+    }
+
+    // Opens the dropdown if it is closed, or closes it if it is open.
+    private void TogglePartTypeDropdown()
+    {
+        if (isCreateBusy)
+        {
+            return;
+        }
+
+        isPartTypeDropdownOpen = !isPartTypeDropdownOpen;
+    }
+
+    // Closes the dropdown menu without changing the selected value.
+    private void ClosePartTypeDropdown()
+    {
+        isPartTypeDropdownOpen = false;
+    }
+
+    // Stores the selected enum value in the create form model and closes the dropdown.
+    private void SelectPartType(PartType partType)
+    {
+        createModel.PartType = partType;
+        isPartTypeDropdownOpen = false;
+    }
+
+    // Saves a new repair part row using the create form model.
+    private async Task HandleCreatePartSubmit()
+    {
+        if (isCreateBusy)
+        {
+            return;
+        }
+
+        successMessage = null;
+        createErrorMessage = null;
+        deleteErrorMessage = null;
+
+        isCreateBusy = true;
+
+        try
+        {
+            createModel.RepairId = RepairId;
+
+            await RepairPartService.CreateRepairPartAsync(createModel);
+
+            try
+            {
+                await ReloadPartsAsync();
+            }
+            catch
+            {
+                createErrorMessage = "Repair part was added, but the list could not be refreshed.";
+                return;
+            }
+
+            createModel = new RepairPartCreateViewModel
+            {
+                RepairId = RepairId
+            };
+
+            isPartTypeDropdownOpen = false;
+            successMessage = "Repair part added successfully.";
+        }
+        catch (ArgumentException ex)
+        {
+            createErrorMessage = ex.Message;
+        }
+        catch (InvalidOperationException ex)
+        {
+            createErrorMessage = ex.Message;
+        }
+        catch
+        {
+            createErrorMessage = "Repair part could not be added.";
+        }
+        finally
+        {
+            isCreateBusy = false;
+        }
+    }
+
+    // Loads one selected repair part row into the edit model and starts edit mode.
+    private async Task BeginEditPartAsync(int repairPartId)
+    {
+        if (IsAnyBusy)
+        {
+            return;
+        }
+
+        successMessage = null;
+        editErrorMessage = null;
+        deleteErrorMessage = null;
+        pendingDeletePartId = null;
+
+        try
+        {
+            var repairPart = await RepairPartService.GetRepairPartByIdAsync(repairPartId);
+
+            if (repairPart is null)
+            {
+                editErrorMessage = "The selected repair part could not be found.";
+                editingPartId = null;
+                return;
+            }
+
+            editingPartId = repairPart.RepairPartId;
+
+            editModel = new RepairPartEditViewModel
+            {
+                RepairPartId = repairPart.RepairPartId,
+                RepairId = repairPart.RepairId,
+                PartName = repairPart.PartName,
+                PartType = repairPart.PartType,
+                Quantity = repairPart.Quantity,
+                UnitCost = repairPart.UnitCost
+            };
+
+            isEditPartTypeDropdownOpen = false;
+        }
+        catch
+        {
+            editErrorMessage = "The selected repair part could not be loaded.";
+            editingPartId = null;
+        }
+    }
+
+    // Opens the edit dropdown if it is closed, or closes it if it is open.
+    private void ToggleEditPartTypeDropdown()
+    {
+        if (isEditBusy)
+        {
+            return;
+        }
+
+        isEditPartTypeDropdownOpen = !isEditPartTypeDropdownOpen;
+    }
+
+    // Closes the edit dropdown menu without changing the selected value.
+    private void CloseEditPartTypeDropdown()
+    {
+        isEditPartTypeDropdownOpen = false;
+    }
+
+    // Stores the selected enum value in the edit form model and closes the dropdown.
+    private void SelectEditPartType(PartType partType)
+    {
+        editModel.PartType = partType;
+        isEditPartTypeDropdownOpen = false;
+    }
+
+    // Cancels edit mode and clears edit-specific UI state without saving changes.
+    private void CancelEditPart()
+    {
+        editingPartId = null;
+        editModel = new RepairPartEditViewModel();
+        editErrorMessage = null;
+        isEditPartTypeDropdownOpen = false;
+    }
+
+    // Saves the edited repair part row using the edit form model.
+    private async Task HandleEditPartSubmit()
+    {
+        if (!editingPartId.HasValue || isEditBusy)
+        {
+            return;
+        }
+
+        successMessage = null;
+        editErrorMessage = null;
+        deleteErrorMessage = null;
+
+        isEditBusy = true;
+
+        try
+        {
+            editModel.RepairId = RepairId;
+
+            await RepairPartService.UpdateRepairPartAsync(editModel);
+
+            try
+            {
+                await ReloadPartsAsync();
+            }
+            catch
+            {
+                editErrorMessage = "Repair part was updated, but the list could not be refreshed.";
+                return;
+            }
+
+            editingPartId = null;
+            editModel = new RepairPartEditViewModel();
+            isEditPartTypeDropdownOpen = false;
+            successMessage = "Repair part updated successfully.";
+        }
+        catch (ArgumentException ex)
+        {
+            editErrorMessage = ex.Message;
+        }
+        catch (InvalidOperationException ex)
+        {
+            editErrorMessage = ex.Message;
+        }
+        catch
+        {
+            editErrorMessage = "Repair part could not be updated.";
+        }
+        finally
+        {
+            isEditBusy = false;
+        }
+    }
+
+    // Reloads the part rows and recalculates the total parts cost for the current repair.
+    private async Task ReloadPartsAsync()
+    {
+        parts = await RepairPartService.GetPartsByRepairIdAsync(RepairId);
+        totalPartsCost = await RepairPartService.CalculateTotalPartsCostAsync(RepairId);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        successMessage = null;
+        createErrorMessage = null;
+        editErrorMessage = null;
+        deleteErrorMessage = null;
+
+        editingPartId = null;
+        pendingDeletePartId = null;
+
+        isPartTypeDropdownOpen = false;
+        isEditPartTypeDropdownOpen = false;
+
+        isCreateBusy = false;
+        isEditBusy = false;
+        isDeleteBusy = false;
+
+        if (RepairId <= 0)
+        {
+            parts = new();
+            totalPartsCost = 0;
+            createModel = new();
+            editModel = new();
+            isLoading = false;
+            return;
+        }
+
+        createModel = new RepairPartCreateViewModel
+        {
+            RepairId = RepairId
+        };
+
+        try
+        {
+            await ReloadPartsAsync();
+        }
+        catch
+        {
+            errorMessage = "Repair parts could not be loaded.";
+            parts = new();
+            totalPartsCost = 0;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

@@ -1,0 +1,47 @@
+﻿@using Microsoft.AspNetCore.Components.Authorization
+
+<nav class="st-sidebar-nav d-flex flex-column h-100" aria-label="Sidebar navigation">
+    <div class="st-sidebar-nav__main d-flex flex-column gap-1">
+        <NavLink class="st-nav-link" href="/dashboard" Match="NavLinkMatch.All">
+            <span class="st-nav-link__text">Dashboard</span>
+        </NavLink>
+
+        <NavLink class="st-nav-link" href="/motorists">
+            <span class="st-nav-link__text">Motorists</span>
+        </NavLink>
+
+        <NavLink class="st-nav-link" href="/vehicles/search">
+            <span class="st-nav-link__text">Vehicles</span>
+        </NavLink>
+
+        <NavLink class="st-nav-link" href="/repairs/search">
+            <span class="st-nav-link__text">Repairs</span>
+        </NavLink>
+
+        <NavLink class="st-nav-link" href="/classes">
+            <span class="st-nav-link__text">Classes</span>
+        </NavLink>
+
+        <NavLink class="st-nav-link" href="/reports">
+            <span class="st-nav-link__text">Reports</span>
+        </NavLink>
+
+        <NavLink class="st-nav-link" href="/account/change-password">
+            <span class="st-nav-link__text">Account</span>
+        </NavLink>
+
+        <AuthorizeView Roles="SuperUser">
+            <Authorized>
+                <NavLink class="st-nav-link" href="/admin">
+                    <span class="st-nav-link__text">Admin</span>
+                </NavLink>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+
+    <div class="st-sidebar-nav__footer mt-auto pt-3">
+        <a href="/Account/Logout" class="st-nav-link st-nav-link--footer">
+            <span class="st-nav-link__text">Logout</span>
+        </a>
+    </div>
+</nav>

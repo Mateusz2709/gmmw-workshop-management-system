@@ -1,0 +1,190 @@
+﻿@using System.Linq
+@using Microsoft.AspNetCore.Components
+
+<div class="st-field mb-0">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label class="st-label">@Label</label>
+    }
+
+    <div class="st-dropdown">
+        <button type="button"
+                class="st-input st-dropdown__trigger w-100 text-start"
+                @onclick="TogglePicker"
+                aria-expanded="@isPickerOpen">
+            <span>@DisplayText</span>
+            <span class="st-dropdown__chevron">▾</span>
+        </button>
+
+        @if (isPickerOpen)
+        {
+            <button type="button"
+                    class="st-dropdown__backdrop"
+                    @onclick="ClosePicker"
+                    aria-label="Close time picker"></button>
+
+            <div class="st-dropdown__menu st-time-picker__menu">
+                <div class="st-card">
+                    <div class="st-card__body">
+                        <div class="st-time-picker__grid">
+                            <div>
+                                <div class="st-label mb-2">Hours</div>
+
+                                <div class="st-time-picker__list">
+                                    @foreach (var hour in Hours)
+                                    {
+                                        <button type="button"
+                                                class="@GetHourButtonClass(hour)"
+                                                @onclick="() => SelectHourAsync(hour)">
+                                            @FormatNumber(hour)
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="st-label mb-2">Minutes</div>
+
+                                <div class="st-time-picker__list">
+                                    @foreach (var minute in Minutes)
+                                    {
+                                        <button type="button"
+                                                class="@GetMinuteButtonClass(minute)"
+                                                @onclick="() => SelectMinuteAsync(minute)">
+                                            @FormatNumber(minute)
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-column flex-sm-row justify-content-between gap-2 mt-3 pt-3 border-top">
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="ClearTimeAsync">
+                                Clear
+                            </button>
+
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="ClosePicker">
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string Label { get; set; } = string.Empty;
+
+    [Parameter]
+    public TimeSpan? Value { get; set; }
+
+    [Parameter]
+    public EventCallback<TimeSpan?> ValueChanged { get; set; }
+
+    private bool isPickerOpen;
+    private int selectedHour;
+    private int selectedMinute;
+    private TimeSpan? lastSyncedValue;
+
+    private IEnumerable<int> Hours => Enumerable.Range(0, 24);
+    private IEnumerable<int> Minutes => Enumerable.Range(0, 60);
+
+    private string DisplayText => Value.HasValue
+        ? Value.Value.ToString(@"hh\:mm")
+        : "Select time";
+
+    protected override void OnParametersSet()
+    {
+        if (lastSyncedValue != Value)
+        {
+            SyncSelectedParts();
+            lastSyncedValue = Value;
+        }
+    }
+
+    private void TogglePicker()
+    {
+        if (!isPickerOpen)
+        {
+            SyncSelectedParts();
+        }
+
+        isPickerOpen = !isPickerOpen;
+    }
+
+    private void ClosePicker()
+    {
+        isPickerOpen = false;
+    }
+
+    private async Task SelectHourAsync(int hour)
+    {
+        selectedHour = hour;
+        await CommitTimeAsync(closePicker: false);
+    }
+
+    private async Task SelectMinuteAsync(int minute)
+    {
+        selectedMinute = minute;
+        await CommitTimeAsync(closePicker: true);
+    }
+
+    private async Task CommitTimeAsync(bool closePicker)
+    {
+        var newValue = new TimeSpan(selectedHour, selectedMinute, 0);
+
+        Value = newValue;
+        lastSyncedValue = newValue;
+
+        await ValueChanged.InvokeAsync(newValue);
+
+        if (closePicker)
+        {
+            isPickerOpen = false;
+        }
+    }
+
+    private async Task ClearTimeAsync()
+    {
+        Value = null;
+        lastSyncedValue = null;
+
+        await ValueChanged.InvokeAsync(null);
+
+        isPickerOpen = false;
+    }
+
+    private void SyncSelectedParts()
+    {
+        var baseTime = Value ?? TimeSpan.Zero;
+
+        selectedHour = baseTime.Hours;
+        selectedMinute = baseTime.Minutes;
+    }
+
+    private string GetHourButtonClass(int hour)
+    {
+        return selectedHour == hour
+            ? "st-btn st-btn--primary w-100"
+            : "st-btn st-btn--secondary w-100";
+    }
+
+    private string GetMinuteButtonClass(int minute)
+    {
+        return selectedMinute == minute
+            ? "st-btn st-btn--primary w-100"
+            : "st-btn st-btn--secondary w-100";
+    }
+
+    private static string FormatNumber(int value)
+    {
+        return value.ToString("00");
+    }
+}

@@ -1,0 +1,161 @@
+﻿@page "/Account/Login"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Identity
+@using GMMW.Web.Data
+
+@attribute [AllowAnonymous]
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Log in</PageTitle>
+
+<div class="st-login-shell">
+    <div class="st-login-card">
+        <div class="st-login-brand">
+            <div>
+                <div class="st-login-brand__eyebrow">GMMW</div>
+                <h1 class="st-login-brand__title">Workshop Management System</h1>
+                <p class="st-login-brand__text">
+                    Sign in to access the internal workspace, manage workshop records, and continue daily operations.
+                </p>
+            </div>
+
+            <div class="st-login-brand__text">
+                Internal access for authorised staff and administrators only.
+            </div>
+        </div>
+
+        <div class="st-login-panel">
+            <h2 class="st-login-panel__title">Welcome back</h2>
+            <p class="st-login-panel__subtitle">Please enter your account details to continue.</p>
+
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="st-alert st-alert--danger mb-3" role="alert">
+                    @errorMessage
+                </div>
+            }
+
+            <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login" class="st-stack-md">
+                <DataAnnotationsValidator />
+
+                <div class="st-field">
+                    <label for="Input.Email" class="st-label">Email</label>
+                    <InputText @bind-Value="Input.Email"
+                               id="Input.Email"
+                               class="st-input"
+                               autocomplete="username"
+                               aria-required="true"
+                               inputmode="email"
+                               placeholder="name@example.com" />
+                    <ValidationMessage For="() => Input.Email" class="validation-message" />
+                </div>
+
+                <div class="st-field">
+                    <label for="Input.Password" class="st-label">Password</label>
+                    <InputText type="password"
+                               @bind-Value="Input.Password"
+                               id="Input.Password"
+                               class="st-input"
+                               autocomplete="current-password"
+                               aria-required="true"
+                               placeholder="Enter your password" />
+                    <ValidationMessage For="() => Input.Password" class="validation-message" />
+                </div>
+
+                <div class="d-flex flex-column-reverse flex-sm-row justify-content-between gap-2 pt-2">
+                    <a href="/public/todayclasses" class="st-btn st-btn--secondary">
+                        Back to Today’s Classes
+                    </a>
+
+                    <button type="submit" class="st-btn st-btn--primary">
+                        Log In
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+</div>
+
+@code {
+    // Stores a friendly page-level login error message.
+    private string? errorMessage;
+
+    // Stores the Blazor edit context used for validation.
+    private EditContext editContext = default!;
+
+    // Stores the posted login form values.
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    // Stores the optional return URL passed to the login page.
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    // Prepares the input model and edit context when the page first loads.
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+        editContext = new EditContext(Input);
+    }
+
+    // Runs when the login form is submitted.
+    public async Task LoginUser()
+    {
+        errorMessage = null;
+
+        // Stops the login attempt if the form still has validation errors.
+        if (!editContext.Validate())
+        {
+            if (string.IsNullOrWhiteSpace(Input.Email) || string.IsNullOrWhiteSpace(Input.Password))
+            {
+                errorMessage = "Please enter your email and password.";
+            }
+
+            return;
+        }
+
+        // Looks up the user first so disabled accounts can be blocked with a clearer message.
+        var user = await UserManager.FindByEmailAsync(Input.Email);
+
+        if (user is not null && !user.IsActive)
+        {
+            errorMessage = "This account is disabled. Please contact an administrator.";
+            return;
+        }
+
+        // Attempts to sign in with the submitted email and password.
+        var result = await SignInManager.PasswordSignInAsync(
+            Input.Email,
+            Input.Password,
+            isPersistent: false,
+            lockoutOnFailure: false);
+
+        if (result.Succeeded)
+        {
+            // Redirects to the requested page, or the normal post-login destination.
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+        else
+        {
+            errorMessage = "Invalid email or password.";
+        }
+    }
+
+    // Stores the fields used by the login form.
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Email is required.")]
+        [EmailAddress(ErrorMessage = "Enter a valid email address.")]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Password is required.")]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+    }
+}

@@ -1,0 +1,360 @@
+﻿@page "/dashboard"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IDashboardService DashboardService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@using Microsoft.AspNetCore.Identity
+@using GMMW.Web.Data
+@inject UserManager<ApplicationUser> UserManager
+
+<PageTitle>Dashboard</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Welcome back, @currentUserDisplayName</h1>
+            <p class="st-page-subtitle">
+                @currentDateContext
+            </p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="st-alert st-alert--info" role="status">
+            Loading dashboard data...
+        </div>
+    }
+    else if (summary is not null)
+    {
+        <div class="row g-4">
+            <div class="col-12 col-md-6 col-xl-3">
+                <div class="st-card h-100">
+                    <div class="st-card__body">
+                        <div class="small text-uppercase fw-semibold st-muted mb-2">Motorists</div>
+                        <div class="fs-1 fw-semibold lh-1 mb-2">@summary.TotalMotorists</div>
+                        <p class="st-card-subtitle mb-0">Registered motorist records.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-6 col-xl-3">
+                <div class="st-card h-100">
+                    <div class="st-card__body">
+                        <div class="small text-uppercase fw-semibold st-muted mb-2">Vehicles</div>
+                        <div class="fs-1 fw-semibold lh-1 mb-2">@summary.TotalVehicles</div>
+                        <p class="st-card-subtitle mb-0">Vehicle records in the system.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-6 col-xl-3">
+                <div class="st-card h-100">
+                    <div class="st-card__body">
+                        <div class="small text-uppercase fw-semibold st-muted mb-2">Active Repairs</div>
+                        <div class="fs-1 fw-semibold lh-1 mb-2">@summary.ActiveRepairs</div>
+                        <p class="st-card-subtitle mb-0">Repairs still in progress.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-6 col-xl-3">
+                <div class="st-card h-100">
+                    <div class="st-card__body">
+                        <div class="small text-uppercase fw-semibold st-muted mb-2">Upcoming Classes</div>
+                        <div class="fs-1 fw-semibold lh-1 mb-2">@summary.UpcomingClasses</div>
+                        <p class="st-card-subtitle mb-0">Classes from today onward.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-12 col-xl-8">
+                <div class="st-card h-100">
+                    <div class="st-card__header">
+                        <div>
+                            <h2 class="st-card-title">Latest Activity</h2>
+                            <p class="st-card-subtitle">
+                                Recent repair activity and the next scheduled classes.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        <div>
+                            <h3 class="h6 mb-3">Latest Repairs</h3>
+
+                            @if (summary.LatestRepairs.Count == 0)
+                            {
+                                <div class="st-empty">
+                                    <span class="st-empty__title">No repairs available</span>
+                                    Repair activity will appear here once records are added.
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="st-table-shell">
+                                    <div class="table-responsive">
+                                        <table class="st-table align-middle mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Repair</th>
+                                                    <th>Vehicle</th>
+                                                    <th>Owner</th>
+                                                    <th>Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var repair in summary.LatestRepairs)
+                                                {
+                                                    <tr>
+                                                        <td>
+                                                            <div class="fw-semibold">#@repair.RepairId</div>
+                                                            <div class="st-muted small">@repair.RepairDate.ToString("dd MMM yyyy")</div>
+                                                        </td>
+                                                        <td>
+                                                            <div class="fw-semibold">@repair.VehicleDisplay</div>
+                                                            <div class="st-muted small">@GetShortFaultSummary(repair.FaultSummary)</div>
+                                                        </td>
+                                                        <td>@repair.OwnerName</td>
+                                                        <td>
+                                                            <span class="st-inline-status @GetRepairStatusClass(repair.StatusText)">
+                                                                @repair.StatusText
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="mt-4 pt-4 border-top">
+                            <h3 class="h6 mb-3">Classes Soon</h3>
+
+                            @if (summary.ClassesSoon.Count == 0)
+                            {
+                                <div class="st-empty">
+                                    <span class="st-empty__title">No upcoming classes</span>
+                                    Upcoming classes will appear here when they are scheduled.
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="d-grid gap-3">
+                                    @foreach (var workshopClass in summary.ClassesSoon)
+                                    {
+                                        <div class="p-3 border rounded-3">
+                                            <div class="d-flex flex-column gap-1">
+                                                <div class="fw-semibold">@workshopClass.Title</div>
+                                                <div class="st-muted small">
+                                                    @workshopClass.ClassDate.ToString("dd MMM yyyy") · @FormatClassTime(workshopClass.StartTime, workshopClass.EndTime)
+                                                </div>
+                                                <div class="small">Delivered by: @workshopClass.DelivererName</div>
+
+                                                @if (!string.IsNullOrWhiteSpace(workshopClass.Notes))
+                                                {
+                                                    <div class="small st-muted">
+                                                        @GetShortNotesSummary(workshopClass.Notes)
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-4">
+                <div class="st-card h-100">
+                    <div class="st-card__header">
+                        <div>
+                            <h2 class="st-card-title">Today at a Glance</h2>
+                            <p class="st-card-subtitle">
+                                A quick view of today’s class activity and public timetable context.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        @if (TodayClasses.Count == 0)
+                        {
+                            <div class="st-empty">
+                                <span class="st-empty__title">No classes scheduled today</span>
+                                The public classes page will remain empty until a class is scheduled for today.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="d-grid gap-3">
+                                @foreach (var workshopClass in TodayClasses)
+                                {
+                                    <div class="p-3 border rounded-3">
+                                        <div class="fw-semibold">@workshopClass.Title</div>
+                                        <div class="st-muted small">
+                                            @FormatClassTime(workshopClass.StartTime, workshopClass.EndTime)
+                                        </div>
+                                        <div class="small">Delivered by: @workshopClass.DelivererName</div>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    // Stores the full dashboard data returned by the dashboard service.
+    private DashboardSummaryViewModel? summary;
+
+    // Stores a page-level error message if the dashboard cannot be loaded.
+    private string? errorMessage;
+
+    // Tracks whether the dashboard is currently loading.
+    private bool isLoading = true;
+
+    // Stores the display name shown in the dashboard title.
+    private string currentUserDisplayName = "there";
+
+    // Stores the subtitle line shown under the dashboard title.
+    private string currentDateContext = string.Empty;
+
+    // Returns only classes scheduled for today so the right-side panel stays focused.
+    private List<DashboardUpcomingClassItemViewModel> TodayClasses =>
+        summary is null
+            ? new List<DashboardUpcomingClassItemViewModel>()
+            : summary.ClassesSoon
+                .Where(workshopClass => workshopClass.ClassDate.Date == DateTime.Today)
+                .OrderBy(workshopClass => workshopClass.StartTime)
+                .ToList();
+
+    // Loads the dashboard data when the page opens.
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardAsync();
+    }
+
+    // Loads all dashboard state in one place so the page stays easy to read.
+    private async Task LoadDashboardAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            // Reads the current authenticated user so the page can build a proper display name.
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            // Gets the signed-in user's Identity primary key from the claims collection.
+            var currentUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            // If a valid user ID exists, load the real ApplicationUser record from Identity.
+            if (!string.IsNullOrWhiteSpace(currentUserId))
+            {
+                var currentUser = await UserManager.FindByIdAsync(currentUserId);
+
+                // Prefer the stored full name from the database instead of falling back to the login/email.
+                if (currentUser is not null && !string.IsNullOrWhiteSpace(currentUser.FullName))
+                {
+                    currentUserDisplayName = currentUser.FullName;
+                }
+                else
+                {
+                    currentUserDisplayName =
+                        user.FindFirst(ClaimTypes.Name)?.Value
+                        ?? user.Identity?.Name
+                        ?? "there";
+                }
+            }
+            else
+            {
+                currentUserDisplayName =
+                    user.FindFirst(ClaimTypes.Name)?.Value
+                    ?? user.Identity?.Name
+                    ?? "there";
+            }
+
+            // Builds the short date/context line for the page header.
+            currentDateContext = $"Today is {DateTime.Today:dddd, dd MMMM yyyy}. Here is a quick overview of the workshop workspace.";
+
+            // Loads the real dashboard summary from the service layer.
+            summary = await DashboardService.GetDashboardSummaryAsync();
+        }
+        catch
+        {
+            // Shows a clear page-level error if the dashboard data cannot be loaded.
+            errorMessage = "Something went wrong while loading the dashboard.";
+        }
+        finally
+        {
+            // Ends the loading state whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+
+    // Keeps repair status styling simple and readable on the dashboard.
+    private string GetRepairStatusClass(string statusText)
+    {
+        return statusText.Equals("Completed", StringComparison.OrdinalIgnoreCase)
+            ? "st-inline-status--info"
+            : "st-inline-status--warning";
+    }
+
+    // Shortens long fault text so the latest-repairs table stays easy to scan.
+    private string GetShortFaultSummary(string? faultSummary)
+    {
+        if (string.IsNullOrWhiteSpace(faultSummary))
+        {
+            return "No fault description recorded.";
+        }
+
+        return faultSummary.Length <= 60
+            ? faultSummary
+            : $"{faultSummary[..60]}...";
+    }
+
+    // Shortens long class notes so the classes-soon section stays compact.
+    private string GetShortNotesSummary(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            return string.Empty;
+        }
+
+        return notes.Length <= 80
+            ? notes
+            : $"{notes[..80]}...";
+    }
+
+    // Formats a class time range into one readable timetable string.
+    private string FormatClassTime(TimeSpan startTime, TimeSpan endTime)
+    {
+        var formattedStartTime = DateTime.Today.Add(startTime).ToString("hh:mm tt");
+        var formattedEndTime = DateTime.Today.Add(endTime).ToString("hh:mm tt");
+
+        return $"{formattedStartTime} - {formattedEndTime}";
+    }
+}

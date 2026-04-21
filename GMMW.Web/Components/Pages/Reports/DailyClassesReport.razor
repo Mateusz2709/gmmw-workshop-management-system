@@ -1,0 +1,297 @@
+﻿@page "/reports/daily-classes"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using GMMW.Web.Components.Shared
+@attribute [Authorize]
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@inject IReportService ReportService
+
+<PageTitle>Daily Classes Report</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Daily Classes Report</h1>
+            <p class="st-page-subtitle">
+                Review the classes scheduled for a selected day, defaulting to the current day.
+            </p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    <div class="st-card st-card--allow-overflow">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Report Filters</h2>
+                <p class="st-card-subtitle">
+                    Select a day to load the scheduled classes for that date.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="row g-4 align-items-end">
+                <div class="col-12 col-md-6 col-xl-4">
+                    <StDatePicker Label="Date"
+                                  Value="selectedDate"
+                                  ValueChanged="OnSelectedDateChangedAsync" />
+                </div>
+
+                <div class="col-12 col-xl-8">
+                    <div class="d-flex flex-column flex-sm-row justify-content-xl-end gap-2">
+                        <button type="button"
+                                class="st-btn st-btn--primary"
+                                @onclick="ApplyFiltersAsync"
+                                disabled="@isLoading">
+                            Apply Filters
+                        </button>
+
+                        <button type="button"
+                                class="st-btn st-btn--secondary"
+                                @onclick="ClearFiltersAsync"
+                                disabled="@(!CanResetFilters || isLoading)">
+                            Reset Filters
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Daily Classes Results</h2>
+                <p class="st-card-subtitle">@ResultsSubtitle</p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            @if (isLoading)
+            {
+                <div class="st-alert st-alert--info" role="status">
+                    Loading daily classes results...
+                </div>
+            }
+            else if (reportItems.Count == 0)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">No classes found for the selected day</span>
+                    Try a different date.
+                </div>
+            }
+            else
+            {
+                <div class="row g-4">
+                    <div class="col-12 col-md-6 col-xl-4">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Reporting Day</span>
+                                    <div class="fs-4 fw-semibold">@reportDate.ToString("dddd, dd MMMM yyyy")</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Day currently loaded for this report.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-4">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Classes Scheduled</span>
+                                    <div class="fs-2 fw-bold">@reportItems.Count</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Total classes scheduled for the loaded day.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-12 col-xl-4">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Volunteers Scheduled</span>
+                                    <div class="fs-2 fw-bold">@DistinctVolunteerCount</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Distinct volunteers delivering classes on this day.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="st-card mt-4">
+                    <div class="st-card__body">
+                        <div class="row g-3 align-items-center">
+                            <div class="col-12 col-lg-8">
+                                <h3 class="st-card-title mb-2">Summary</h3>
+                                <p class="mb-0 text-muted">
+                                    @SummaryText
+                                </p>
+                            </div>
+
+                            <div class="col-12 col-lg-4">
+                                <div class="d-flex justify-content-lg-end">
+                                    <span class="st-inline-status st-inline-status--info">
+                                        Reporting day loaded
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="st-card mt-4">
+                    <div class="st-card__header">
+                        <div>
+                            <h3 class="st-card-title">Scheduled Classes</h3>
+                            <p class="st-card-subtitle">
+                                Class title, time range, and assigned volunteer for the loaded day.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body p-0">
+                        <div class="st-table-shell">
+                            <div class="table-responsive">
+                                <table class="st-table align-middle mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Class</th>
+                                            <th>Time</th>
+                                            <th>Volunteer</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in reportItems)
+                                        {
+                                            <tr>
+                                                <td>@item.ClassTitle</td>
+                                                <td>@FormatTimeRange(item.StartTime, item.EndTime)</td>
+                                                <td>@item.VolunteerName</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // Stores the final daily classes report rows returned by the reporting service.
+    private List<DailyClassReportItemViewModel> reportItems = new();
+
+    // Stores a page-level error message if loading fails.
+    private string? errorMessage;
+
+    // Tracks whether the page is currently loading report data.
+    private bool isLoading = true;
+
+    // Stores the selected date shown in the filter UI.
+    private DateTime selectedDate = DateTime.Today;
+
+    // Stores the date for the report that has actually been loaded.
+    private DateTime reportDate = DateTime.Today;
+
+    // Controls whether Reset Filters should be enabled.
+    private bool CanResetFilters => selectedDate.Date != DateTime.Today;
+
+    // Returns the number of distinct volunteers shown in the loaded result set.
+    private int DistinctVolunteerCount =>
+        reportItems
+            .Where(item => !string.IsNullOrWhiteSpace(item.VolunteerName))
+            .Select(item => item.VolunteerName.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+
+    // Returns the results subtitle shown in the results card header.
+    private string ResultsSubtitle =>
+        reportItems.Count == 0
+            ? $"No classes are scheduled for {reportDate:dddd, dd MMMM yyyy}."
+            : $"Showing {reportItems.Count} class record{(reportItems.Count == 1 ? "" : "s")} for {reportDate:dddd, dd MMMM yyyy}.";
+
+    // Returns the summary sentence shown below the top metric cards.
+    private string SummaryText =>
+        $"On {reportDate:dddd, dd MMMM yyyy}, the workshop scheduled {reportItems.Count} {(reportItems.Count == 1 ? "class" : "classes")} delivered by {DistinctVolunteerCount} {(DistinctVolunteerCount == 1 ? "volunteer" : "volunteers")}.";
+
+    // Loads the default report when the page first opens.
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReportAsync();
+    }
+
+    // Stores the selected day from the custom date picker.
+    private Task OnSelectedDateChangedAsync(DateTime? value)
+    {
+        selectedDate = (value ?? DateTime.Today).Date;
+        return Task.CompletedTask;
+    }
+
+    // Loads the daily classes report using the currently selected date.
+    private async Task LoadReportAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            // Requests the report rows for the selected day.
+            var loadedItems = await ReportService.GetDailyClassesReportAsync(selectedDate);
+
+            // Stores the loaded results and the exact day they belong to.
+            reportItems = loadedItems;
+            reportDate = selectedDate;
+        }
+        catch
+        {
+            // Resets the visible results cleanly if the report fails to load.
+            errorMessage = "The daily classes report could not be loaded. Please try again.";
+            reportItems = new List<DailyClassReportItemViewModel>();
+        }
+        finally
+        {
+            // Ends the loading state whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+
+    // Applies the selected filter date and reloads the report.
+    private async Task ApplyFiltersAsync()
+    {
+        await LoadReportAsync();
+    }
+
+    // Resets the filter back to today and reloads the report.
+    private async Task ClearFiltersAsync()
+    {
+        selectedDate = DateTime.Today;
+        await LoadReportAsync();
+    }
+
+    // Formats the displayed class time range using a readable 12-hour format.
+    private static string FormatTimeRange(TimeSpan startTime, TimeSpan endTime)
+    {
+        var formattedStartTime = DateTime.Today.Add(startTime).ToString("hh:mm tt");
+        var formattedEndTime = DateTime.Today.Add(endTime).ToString("hh:mm tt");
+
+        return $"{formattedStartTime} - {formattedEndTime}";
+    }
+}

@@ -1,0 +1,105 @@
+﻿@using Microsoft.AspNetCore.Components
+
+<div class="st-field mb-0">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label class="st-label">@Label</label>
+    }
+
+    <div class="st-dropdown">
+        <button type="button"
+                class="st-select st-dropdown__trigger w-100 text-start"
+                @onclick="ToggleDropdown"
+                aria-expanded="@isDropdownOpen"
+                disabled="@Disabled">
+            <span>@SelectedText</span>
+            <span class="st-dropdown__chevron">▾</span>
+        </button>
+
+        @if (isDropdownOpen)
+        {
+            <button type="button"
+                    class="st-dropdown__backdrop"
+                    @onclick="CloseDropdown"
+                    aria-label="Close option picker"></button>
+
+            <div class="st-dropdown__menu">
+                @if (Options.Count == 0)
+                {
+                    <div class="st-empty">
+                        <span class="st-empty__title">No options available</span>
+                        There are no items to choose from.
+                    </div>
+                }
+                else
+                {
+                    @foreach (var option in Options)
+                    {
+                        <button type="button"
+                                class="st-dropdown__item"
+                                @onclick="() => SelectOptionAsync(option.Key)">
+                            @option.Value
+                        </button>
+                    }
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string Label { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Placeholder { get; set; } = "Select an option";
+
+    [Parameter]
+    public string? Value { get; set; }
+
+    [Parameter]
+    public EventCallback<string> ValueChanged { get; set; }
+
+    [Parameter]
+    public IReadOnlyDictionary<string, string> Options { get; set; } = new Dictionary<string, string>();
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    private bool isDropdownOpen;
+
+    private string SelectedText
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(Value) && Options.TryGetValue(Value, out var selectedLabel))
+            {
+                return selectedLabel;
+            }
+
+            return Placeholder;
+        }
+    }
+
+    private void ToggleDropdown()
+    {
+        if (Disabled)
+        {
+            return;
+        }
+
+        isDropdownOpen = !isDropdownOpen;
+    }
+
+    private void CloseDropdown()
+    {
+        isDropdownOpen = false;
+    }
+
+    private async Task SelectOptionAsync(string selectedValue)
+    {
+        Value = selectedValue;
+        await ValueChanged.InvokeAsync(selectedValue);
+        isDropdownOpen = false;
+    }
+}

@@ -1,0 +1,380 @@
+﻿@page "/motorists"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IMotoristService MotoristService
+@inject IJSRuntime JS
+
+<PageTitle>Motorists</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Motorists</h1>
+            <p class="st-page-subtitle">Search, view, and manage motorist records.</p>
+        </div>
+
+        <div class="st-page-actions">
+            <a href="/motorists/create" class="st-btn st-btn--primary">Register Motorist</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="st-alert st-alert--success" role="status" aria-live="polite">
+            @successMessage
+        </div>
+    }
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Search Motorists</h2>
+                <p class="st-card-subtitle">
+                    Search by name, email, or phone number. Leave the box empty to browse all registered motorists.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-lg">
+                    <div class="st-field mb-0">
+                        <label for="motorist-search" class="st-label">Search Term</label>
+                        <input id="motorist-search"
+                               class="st-input"
+                               placeholder="Search by name, email, or phone"
+                               @bind="searchTerm"
+                               @bind:event="oninput"
+                               @onkeydown="HandleSearchKeyDown" />
+                    </div>
+                </div>
+
+                <div class="col-12 col-lg-auto">
+                    <div class="d-flex flex-column flex-sm-row gap-2">
+                        <button type="button"
+                                class="st-btn st-btn--primary"
+                                @onclick="SearchAsync"
+                                disabled="@isLoading">
+                            Search
+                        </button>
+
+                        <button type="button"
+                                class="st-btn st-btn--secondary"
+                                @onclick="ClearSearchAsync"
+                                disabled="@(!CanClearSearch || isLoading)">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Search Results</h2>
+                <p class="st-card-subtitle">@ResultsSubtitle</p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            @if (isLoading)
+            {
+                <div class="st-alert st-alert--info mb-0" role="status">
+                    Loading motorist records...
+                </div>
+            }
+            else if (motorists.Count == 0)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">No motorists found</span>
+                    @(HasSearchTerm
+                        ? "Try a different search term or clear the search to browse all motorists."
+                        : "Register a new motorist or refine the list with a search term.")
+                </div>
+            }
+            else
+            {
+                <div class="st-table-shell">
+                    <div class="table-responsive">
+                        <table class="st-table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Phone</th>
+                                    <th>Email</th>
+                                    <th>Vehicles</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var motorist in motorists)
+                                {
+                                    var isDeletingThisRow = deletingMotoristId == motorist.MotoristId && isDeleting;
+
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">@motorist.FirstName @motorist.LastName</div>
+                                        </td>
+                                        <td>@(string.IsNullOrWhiteSpace(motorist.PhoneNumber) ? "—" : motorist.PhoneNumber)</td>
+                                        <td>@(string.IsNullOrWhiteSpace(motorist.Email) ? "—" : motorist.Email)</td>
+                                        <td>@motorist.Vehicles.Count</td>
+                                        <td class="text-end">
+                                            <div class="d-flex flex-wrap justify-content-end gap-2">
+                                                <a href="@($"/motorists/details/{motorist.MotoristId}")"
+                                                       class="st-btn st-btn--secondary">
+                                                    View
+                                                </a>
+
+                                                <a href="@($"/motorists/edit/{motorist.MotoristId}")"
+                                                       class="st-btn st-btn--secondary">
+                                                    Edit
+                                                </a>
+
+                                                <button type="button"
+                                                        class="st-btn st-btn--danger"
+                                                        @onclick="() => DeleteMotoristAsync(motorist.MotoristId)"
+                                                        disabled="@isDeleting">
+                                                    @(isDeletingThisRow ? "Deleting..." : "Delete")
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                @if (ShowPagination)
+                {
+                    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mt-4 pt-4 border-top">
+                        <p class="mb-0">Page @currentPage of @totalPages</p>
+
+                        <div class="d-flex gap-2">
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToPreviousPageAsync"
+                                    disabled="@(currentPage == 1 || isLoading || isDeleting)">
+                                Previous
+                            </button>
+
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToNextPageAsync"
+                                    disabled="@(currentPage >= totalPages || isLoading || isDeleting)">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // Stores a page-level error message so blocked delete actions can be shown clearly.
+    private string? errorMessage;
+
+    // Stores a page-level success message so successful actions can be confirmed clearly.
+    private string? successMessage;
+
+    // Stores the current text entered into the motorist search box.
+    private string? searchTerm;
+
+    // Stores the current page of motorist results shown in the table.
+    private List<Motorist> motorists = new();
+
+    // Stores the currently selected page number for pagination.
+    private int currentPage = 1;
+
+    // Defines how many motorist records are shown on one page.
+    private const int PageSize = 10;
+
+    // Stores the total number of motorists matching the current search.
+    private int totalMotoristCount;
+
+    // Tracks whether the page is currently loading data.
+    private bool isLoading;
+
+    // Tracks whether a delete action is currently running.
+    private bool isDeleting;
+
+    // Stores the motorist ID currently being deleted so the row button text can reflect it.
+    private int? deletingMotoristId;
+
+    // Stores the total number of result pages.
+    private int totalPages = 1;
+
+    // Controls whether the pagination buttons should be shown.
+    private bool ShowPagination => totalMotoristCount > PageSize;
+
+    // Helps the page switch messages depending on whether the user is searching or browsing all motorists.
+    private bool HasSearchTerm => !string.IsNullOrWhiteSpace(searchTerm);
+
+    // Controls whether the Clear button should be enabled.
+    private bool CanClearSearch => !string.IsNullOrWhiteSpace(searchTerm);
+
+    // Builds the short results summary shown in the results card header.
+    private string ResultsSubtitle =>
+        totalMotoristCount == 0
+            ? (HasSearchTerm ? "No matching motorists were found for the current search." : "No motorists are currently available.")
+            : $"Showing {motorists.Count} of {totalMotoristCount} motorist record{(totalMotoristCount == 1 ? "" : "s")}.";
+
+    // Loads the first page of motorist results when the page opens.
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSearchResultsAsync();
+    }
+
+    // Moves to the previous page when possible.
+    private async Task GoToPreviousPageAsync()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            await LoadSearchResultsAsync();
+        }
+    }
+
+    // Moves to the next page when possible.
+    private async Task GoToNextPageAsync()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+            await LoadSearchResultsAsync();
+        }
+    }
+
+    // Loads the current page of search results from the service layer.
+    private async Task LoadSearchResultsAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        // Trims the search term so accidental spaces do not affect the query.
+        var query = string.IsNullOrWhiteSpace(searchTerm)
+            ? null
+            : searchTerm.Trim();
+
+        try
+        {
+            totalMotoristCount = await MotoristService.GetMotoristSearchCountAsync(query);
+
+            totalPages = totalMotoristCount == 0
+                ? 1
+                : (totalMotoristCount + PageSize - 1) / PageSize;
+
+            if (currentPage > totalPages)
+            {
+                currentPage = totalPages;
+            }
+
+            motorists = await MotoristService.SearchMotoristsAsync(query, currentPage, PageSize);
+        }
+        catch
+        {
+            motorists = new List<Motorist>();
+            totalMotoristCount = 0;
+            totalPages = 1;
+            currentPage = 1;
+            errorMessage = "The motorist results could not be loaded. Please try again.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    // Starts a fresh search and returns to page 1.
+    private async Task SearchAsync()
+    {
+        successMessage = null;
+        currentPage = 1;
+        await LoadSearchResultsAsync();
+    }
+
+    // Clears the search box, returns to page 1, and reloads all motorists.
+    private async Task ClearSearchAsync()
+    {
+        searchTerm = string.Empty;
+        successMessage = null;
+        currentPage = 1;
+        await LoadSearchResultsAsync();
+    }
+
+    // Lets Enter trigger the search from the search box.
+    private async Task HandleSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !isLoading && !isDeleting)
+        {
+            await SearchAsync();
+        }
+    }
+
+    // Runs when the user tries to delete a motorist from the list page.
+    private async Task DeleteMotoristAsync(int motoristId)
+    {
+        if (isDeleting)
+        {
+            return;
+        }
+
+        // Clears old messages before a new delete attempt.
+        successMessage = null;
+        errorMessage = null;
+
+        // Shows a browser confirmation dialog before continuing with the delete action.
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this motorist?");
+
+        // Stops the delete immediately if the user cancels the confirmation dialog.
+        if (!confirmed)
+        {
+            return;
+        }
+
+        deletingMotoristId = motoristId;
+        isDeleting = true;
+
+        try
+        {
+            // Calls the service to delete the selected motorist using its ID.
+            await MotoristService.DeleteMotoristAsync(motoristId);
+
+            // Reloads the list so the table reflects the current database state after a successful delete.
+            await LoadSearchResultsAsync();
+
+            successMessage = "Motorist deleted successfully.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Shows a friendly business-rule error, for example when related records are still linked.
+            errorMessage = ex.Message;
+        }
+        catch
+        {
+            // Shows a fallback message for unexpected delete failures.
+            errorMessage = "This motorist cannot be deleted because it is still referenced by other records in the system.";
+        }
+        finally
+        {
+            isDeleting = false;
+            deletingMotoristId = null;
+        }
+    }
+}

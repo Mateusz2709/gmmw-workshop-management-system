@@ -1,0 +1,233 @@
+﻿@page "/motorists/details/{MotoristId:int}"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IMotoristService MotoristService
+@inject IVehicleService VehicleService
+
+<PageTitle>@(motorist is null ? "Motorist Details" : $"{motorist.FirstName} {motorist.LastName}")</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">
+                @(motorist is null ? "Motorist Details" : $"{motorist.FirstName} {motorist.LastName}")
+            </h1>
+            <p class="st-page-subtitle">
+                Review the selected motorist record and manage vehicles linked to this owner.
+            </p>
+        </div>
+
+        <div class="st-page-actions">
+            @if (motorist is not null)
+            {
+                <a href="@($"/motorists/edit/{MotoristId}")" class="st-btn st-btn--secondary">Edit Motorist</a>
+                <a href="@($"/vehicles/create?motoristId={MotoristId}")" class="st-btn st-btn--primary">Add Vehicle</a>
+            }
+
+            <a href="/motorists" class="st-btn st-btn--secondary">Back to Motorists</a>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="st-card">
+            <div class="st-card__body">
+                <div class="st-alert st-alert--info mb-0" role="status">
+                    Loading motorist details...
+                </div>
+            </div>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-card">
+            <div class="st-card__body">
+                <div class="st-alert st-alert--danger mb-0" role="alert" aria-live="polite">
+                    @errorMessage
+                </div>
+            </div>
+        </div>
+    }
+    else if (motorist is null)
+    {
+        <div class="st-card">
+            <div class="st-card__body">
+                <div class="st-alert st-alert--warning mb-0" role="alert">
+                    The selected motorist could not be found.
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            <div class="col-12 col-xl-5">
+                <div class="st-card st-detail-card h-100">
+                    <div class="st-card__body">
+                        <div class="st-detail-card__heading">
+                            <div class="st-detail-card__icon">M</div>
+                            <div>
+                                <h2 class="st-section-title mb-1">Personal Details</h2>
+                                <p class="st-card-subtitle mb-0">
+                                    Core personal and contact information for the selected motorist.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-detail-list">
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Full Name</div>
+                                <div class="st-detail-list__value">@motorist.FirstName @motorist.LastName</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Email</div>
+                                <div class="st-detail-list__value">
+                                    @(string.IsNullOrWhiteSpace(motorist.Email) ? "—" : motorist.Email)
+                                </div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Phone Number</div>
+                                <div class="st-detail-list__value">
+                                    @(string.IsNullOrWhiteSpace(motorist.PhoneNumber) ? "—" : motorist.PhoneNumber)
+                                </div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Address</div>
+                                <div class="st-detail-list__value">
+                                    @(string.IsNullOrWhiteSpace(motorist.Address) ? "—" : motorist.Address)
+                                </div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Motorist ID</div>
+                                <div class="st-detail-list__value">@motorist.MotoristId</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-7">
+                <div class="st-card h-100">
+                    <div class="st-card__header">
+                        <div>
+                            <h2 class="st-card-title">Linked Vehicles</h2>
+                            <p class="st-card-subtitle">
+                                Vehicles currently registered to this motorist.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        @if (!vehicles.Any())
+                        {
+                            <div class="st-empty">
+                                <span class="st-empty__title">No linked vehicles</span>
+                                No vehicles are currently assigned to this motorist.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="st-table-shell">
+                                <div class="table-responsive">
+                                    <table class="st-table align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Vehicle</th>
+                                                <th>Type</th>
+                                                <th>Latest Repair</th>
+                                                <th class="text-end">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var vehicle in vehicles)
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        <div class="fw-semibold">@vehicle.RegistrationNumber</div>
+                                                        <div class="st-muted small">Vehicle ID: @vehicle.VehicleId</div>
+                                                    </td>
+                                                    <td>@vehicle.VehicleType</td>
+                                                    <td>
+                                                        @(vehicle.LatestRepairDate.HasValue
+                                                            ? vehicle.LatestRepairDate.Value.ToString("dd MMM yyyy")
+                                                            : "No repairs recorded")
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <a href="@($"/vehicles/details/{vehicle.VehicleId}")" class="st-btn st-btn--secondary">
+                                                            View Details
+                                                        </a>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    // Gets the selected motorist ID from the route.
+    [Parameter]
+    public int MotoristId { get; set; }
+
+    // Tracks whether the page is still loading its data.
+    private bool isLoading;
+
+    // Stores a page-level error message if loading fails.
+    private string? errorMessage;
+
+    // Stores the loaded motorist record shown on the page.
+    private Motorist? motorist;
+
+    // Stores the linked vehicle summaries shown in the right-side section.
+    private List<MotoristLinkedVehicleViewModel> vehicles = new();
+
+    // Reloads the page data whenever the route parameter changes.
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        motorist = null;
+        vehicles = new List<MotoristLinkedVehicleViewModel>();
+
+        try
+        {
+            // Loads the selected motorist record.
+            motorist = await MotoristService.GetMotoristByIdAsync(MotoristId);
+
+            // Loads the linked vehicle summaries for drill-down display.
+            vehicles = await VehicleService.GetVehicleSummariesByMotoristIdAsync(MotoristId);
+
+            // Stores a friendly message if the motorist does not exist.
+            if (motorist is null)
+            {
+                errorMessage = "The motorist could not be found.";
+            }
+        }
+        catch
+        {
+            // Stores a friendly fallback message for unexpected load failures.
+            errorMessage = "Something went wrong while loading the motorist details.";
+        }
+        finally
+        {
+            // Ends the loading state whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+}

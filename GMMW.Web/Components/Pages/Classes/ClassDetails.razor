@@ -1,0 +1,349 @@
+﻿@page "/classes/details/{WorkshopClassId:int}"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IClassService ClassService
+@inject IAttendanceService AttendanceService
+
+<PageTitle>Class Details</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">
+                @(workshopClass is null ? "Class Details" : workshopClass.Title)
+            </h1>
+            <p class="st-page-subtitle">
+                Review the selected workshop class and its assigned deliverer.
+            </p>
+        </div>
+
+        <div class="st-page-actions">
+            @if (!isLoading && workshopClass is not null && !HasClassCompleted)
+            {
+                <a href="@($"/classes/edit/{WorkshopClassId}")" class="st-btn st-btn--primary">Edit Class</a>
+            }
+
+            <a href="/classes" class="st-btn st-btn--secondary">Back to Classes</a>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="st-card">
+            <div class="st-card__body">
+                <div class="st-alert st-alert--info mb-0" role="status">
+                    Loading class details...
+                </div>
+            </div>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-card">
+            <div class="st-card__body">
+                <div class="st-alert st-alert--danger mb-0" role="alert" aria-live="polite">
+                    @errorMessage
+                </div>
+            </div>
+        </div>
+    }
+    else if (workshopClass is null)
+    {
+        <div class="st-card">
+            <div class="st-card__body">
+                <div class="st-alert st-alert--warning mb-0" role="alert">
+                    The selected class could not be found.
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            <div class="col-12 col-xl-6">
+                <div class="st-card st-detail-card h-100">
+                    <div class="st-card__body">
+                        <div class="st-detail-card__heading">
+                            <div>
+                                <h2 class="st-section-title mb-1">Class Information</h2>
+                                <p class="st-card-subtitle mb-0">
+                                    Main timetable details for this workshop class.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-detail-list">
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Title</div>
+                                <div class="st-detail-list__value">@workshopClass.Title</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Class Date</div>
+                                <div class="st-detail-list__value">@workshopClass.ClassDate.ToString("dddd, dd MMMM yyyy")</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Time</div>
+                                <div class="st-detail-list__value">@FormatClassTime(workshopClass.StartTime, workshopClass.EndTime)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-6">
+                <div class="st-card st-detail-card h-100">
+                    <div class="st-card__body">
+                        <div class="st-detail-card__heading">
+                            <div>
+                                <h2 class="st-section-title mb-1">Assigned Deliverer</h2>
+                                <p class="st-card-subtitle mb-0">
+                                    Internal user currently linked to deliver this class.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-detail-list">
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Name</div>
+                                <div class="st-detail-list__value">@DelivererName</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Email</div>
+                                <div class="st-detail-list__value">@DelivererEmail</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="st-card">
+            <div class="st-card__header">
+                <div>
+                    <h2 class="st-card-title">Class Description</h2>
+                    <p class="st-card-subtitle">
+                        Review the stored description and summary information for this class.
+                    </p>
+                </div>
+            </div>
+
+            <div class="st-card__body">
+                <div class="p-4 border rounded-4 st-surface-soft">
+                    <div class="st-detail-list__label mb-2">Description</div>
+                    <div>@DescriptionText</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="st-card">
+            <div class="st-card__header">
+                <div>
+                    <h2 class="st-card-title">Attendance</h2>
+                    <p class="st-card-subtitle">
+                        Review the attendance state for this class and open attendance management when available.
+                    </p>
+                </div>
+            </div>
+
+            <div class="st-card__body">
+                @if (!string.IsNullOrWhiteSpace(attendanceErrorMessage))
+                {
+                    <div class="st-alert st-alert--warning mb-4" role="alert">
+                        @attendanceErrorMessage
+                    </div>
+                }
+
+                <div class="row g-4 align-items-start">
+                    <div class="col-12 col-xl-8">
+                        @if (!CanManageAttendance)
+                        {
+                            <div class="st-alert st-alert--info mb-0" role="status">
+                                Attendance can be recorded once the class has started.
+                            </div>
+                        }
+                        else if (HasClassCompleted)
+                        {
+                            <div class="st-alert st-alert--info mb-0" role="status">
+                                This class has finished. Attendance can still be reviewed and corrected.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="st-alert st-alert--info mb-0" role="status">
+                                This class is currently in progress. Attendance can be recorded now.
+                            </div>
+                        }
+                    </div>
+
+                    <div class="col-12 col-xl-4">
+                        <div class="d-flex flex-column gap-3">
+                            <span class="st-inline-status st-inline-status--info">
+                                Attendance recorded: @recordedAttendanceCount motorist@(recordedAttendanceCount == 1 ? "" : "s")
+                            </span>
+
+                            @if (!CanManageAttendance)
+                            {
+                                <span class="st-inline-status st-inline-status--warning">
+                                    Scheduled start: @ScheduledStartText
+                                </span>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                @if (CanManageAttendance)
+                {
+                    <div class="d-flex flex-column flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                        <a href="@($"/classes/{WorkshopClassId}/attendance")" class="st-btn st-btn--primary">
+                            Manage Attendance
+                        </a>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    // Stores the workshop class ID taken from the route.
+    [Parameter]
+    public int WorkshopClassId { get; set; }
+
+    // Stores the loaded workshop class record shown on the page.
+    private WorkshopClass? workshopClass;
+
+    // Stores a page-level load error message if the record cannot be loaded.
+    private string? errorMessage;
+
+    // Stores a smaller attendance-specific message if the attendance summary cannot be loaded.
+    private string? attendanceErrorMessage;
+
+    // Tracks whether the page is still loading its data.
+    private bool isLoading = true;
+
+    // Stores the number of attendance rows currently recorded for this class.
+    private int recordedAttendanceCount;
+
+    // Runs when the page receives its route parameter and loads the class details.
+    protected override async Task OnParametersSetAsync()
+    {
+        // Marks the page as loading again before requesting fresh data.
+        isLoading = true;
+
+        // Clears old page-level and attendance-specific messages.
+        errorMessage = null;
+        attendanceErrorMessage = null;
+        recordedAttendanceCount = 0;
+
+        try
+        {
+            // Loads the selected workshop class by its route ID.
+            workshopClass = await ClassService.GetWorkshopClassByIdAsync(WorkshopClassId);
+
+            // Stops early if the class record does not exist.
+            if (workshopClass is null)
+            {
+                return;
+            }
+
+            // Loads the current attendance rows so the page can show a simple summary count.
+            await LoadAttendanceSummaryAsync();
+        }
+        catch
+        {
+            // Stores a friendly fallback message if loading fails unexpectedly.
+            errorMessage = "The class details could not be loaded. Please refresh the page and try again.";
+        }
+        finally
+        {
+            // Marks the page as finished loading whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+
+    // Loads the attendance rows for the current class and stores only the count needed by this page.
+    private async Task LoadAttendanceSummaryAsync()
+    {
+        try
+        {
+            // Loads the attendance rows linked to this class.
+            var attendanceRecords = await AttendanceService.GetAttendanceByClassIdAsync(WorkshopClassId);
+
+            // Stores the number of recorded attendance rows for quick summary display.
+            recordedAttendanceCount = attendanceRecords.Count;
+        }
+        catch
+        {
+            // Keeps the page usable even if the attendance summary cannot be loaded.
+            attendanceErrorMessage = "The attendance summary could not be loaded right now.";
+            recordedAttendanceCount = 0;
+        }
+    }
+
+    // Returns the exact date and time when the class is scheduled to start.
+    private DateTime? ClassStartDateTime =>
+        workshopClass is null
+            ? null
+            : workshopClass.ClassDate.Date.Add(workshopClass.StartTime);
+
+    // Returns the exact date and time when the class is scheduled to finish.
+    private DateTime? ClassEndDateTime =>
+        workshopClass is null
+            ? null
+            : workshopClass.ClassDate.Date.Add(workshopClass.EndTime);
+
+    // Returns true once the current time has reached or passed the class start time.
+    private bool HasClassStarted =>
+        ClassStartDateTime is not null && DateTime.Now >= ClassStartDateTime.Value;
+
+    // Returns true once the current time has passed the class end time.
+    private bool HasClassCompleted =>
+        ClassEndDateTime is not null && DateTime.Now > ClassEndDateTime.Value;
+
+    // Returns true when attendance should be manageable on this page.
+    private bool CanManageAttendance => HasClassStarted;
+
+    // Formats the class start date and time into a readable message for the attendance section.
+    private string ScheduledStartText =>
+        ClassStartDateTime is not null
+            ? ClassStartDateTime.Value.ToString("dddd, dd MMMM yyyy hh:mm tt")
+            : "Not available";
+
+    // Formats the class start and end times into one readable timetable string.
+    private string FormatClassTime(TimeSpan startTime, TimeSpan endTime)
+    {
+        // Converts the start time into a readable 12-hour display.
+        var formattedStartTime = DateTime.Today.Add(startTime).ToString("hh:mm tt");
+
+        // Converts the end time into a readable 12-hour display.
+        var formattedEndTime = DateTime.Today.Add(endTime).ToString("hh:mm tt");
+
+        // Returns the final combined time range.
+        return $"{formattedStartTime} - {formattedEndTime}";
+    }
+
+    // Returns the assigned deliverer's name or a fallback value if the related user is missing.
+    private string DelivererName =>
+        workshopClass?.DeliveredByUser is not null
+            ? workshopClass.DeliveredByUser.FullName
+            : "No deliverer assigned";
+
+    // Returns the assigned deliverer's email or a fallback value.
+    private string DelivererEmail =>
+        !string.IsNullOrWhiteSpace(workshopClass?.DeliveredByUser?.Email)
+            ? workshopClass.DeliveredByUser.Email!
+            : "Not available";
+
+    // Returns the stored description or a fallback message.
+    private string DescriptionText =>
+        !string.IsNullOrWhiteSpace(workshopClass?.Description)
+            ? workshopClass.Description
+            : "No description has been added for this class.";
+}

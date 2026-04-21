@@ -1,0 +1,392 @@
+﻿@page "/repairs/search"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.Enums
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IRepairService RepairService
+
+<PageTitle>Repairs</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Repairs</h1>
+            <p class="st-page-subtitle">Search and manage repair records across the workshop.</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Search Repairs</h2>
+                <p class="st-card-subtitle">
+                    Find repair records by repair ID, registration number, or owner name.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="row g-4">
+                <div class="col-12 col-md-4">
+                    <div class="st-field mb-0">
+                        <label for="repair-id-search" class="st-label">Repair ID</label>
+                        <input id="repair-id-search"
+                               type="number"
+                               class="st-input"
+                               @bind="repairIdSearch"
+                               @bind:event="oninput"
+                               @onkeydown="HandleSearchKeyDown" />
+                    </div>
+                </div>
+
+                <div class="col-12 col-md-4">
+                    <div class="st-field mb-0">
+                        <label for="registration-search" class="st-label">Registration Number</label>
+                        <input id="registration-search"
+                               type="text"
+                               class="st-input"
+                               placeholder="Search by registration"
+                               @bind="registrationNumberSearch"
+                               @bind:event="oninput"
+                               @onkeydown="HandleSearchKeyDown" />
+                    </div>
+                </div>
+
+                <div class="col-12 col-md-4">
+                    <div class="st-field mb-0">
+                        <label for="owner-name-search" class="st-label">Owner Name</label>
+                        <input id="owner-name-search"
+                               type="text"
+                               class="st-input"
+                               placeholder="Search by owner name"
+                               @bind="ownerNameSearch"
+                               @bind:event="oninput"
+                               @onkeydown="HandleSearchKeyDown" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex flex-column flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                <button type="button"
+                        class="st-btn st-btn--secondary"
+                        @onclick="ClearSearch"
+                        disabled="@(!CanClearSearch || isLoading)">
+                    Clear
+                </button>
+
+                <button type="button"
+                        class="st-btn st-btn--primary"
+                        @onclick="SearchAsync"
+                        disabled="@isLoading">
+                    Search
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Search Results</h2>
+                <p class="st-card-subtitle">@ResultsSubtitle</p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            @if (isLoading)
+            {
+                <div class="st-alert st-alert--info mb-0" role="status">
+                    Loading repair records...
+                </div>
+            }
+            else if (!hasSearched)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">No search yet</span>
+                    Enter a repair ID, registration number, or owner name to search for repair records.
+                </div>
+            }
+            else if (repairs.Count == 0)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">No repairs found</span>
+                    No repair records matched the current search.
+                </div>
+            }
+            else
+            {
+                <div class="st-table-shell">
+                    <div class="table-responsive">
+                        <table class="st-table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Repair ID</th>
+                                    <th>Repair Date</th>
+                                    <th>Status</th>
+                                    <th>Registration</th>
+                                    <th>Owner</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var repair in repairs)
+                                {
+                                    <tr>
+                                        <td>@repair.RepairId</td>
+                                        <td>@repair.RepairDate.ToString("dd/MM/yyyy")</td>
+                                        <td>
+                                            <span class="@(repair.RepairStatus == RepairStatus.Completed
+                                                                                                                                                  ? "st-inline-status st-inline-status--info"
+                                                                                                                                                  : "st-inline-status st-inline-status--warning")">
+                                                @repair.RepairStatus
+                                            </span>
+                                        </td>
+                                        <td>@repair.Vehicle.RegistrationNumber</td>
+                                        <td>@repair.Vehicle.Motorist.FirstName @repair.Vehicle.Motorist.LastName</td>
+                                        <td class="text-end">
+                                            <div class="d-flex flex-wrap justify-content-end gap-2">
+                                                <a href="@($"/repairs/details/{repair.RepairId}")"
+                                                       class="st-btn st-btn--secondary">
+                                                    View
+                                                </a>
+
+                                                @if (repair.RepairStatus != RepairStatus.Completed)
+                                                {
+                                                    <a href="@($"/repairs/edit/{repair.RepairId}")"
+                                                           class="st-btn st-btn--primary">
+                                                        Edit
+                                                    </a>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                @if (ShowPagination)
+                {
+                    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mt-4 pt-4 border-top">
+                        <p class="mb-0">Page @currentPage of @totalPages</p>
+
+                        <div class="d-flex gap-2">
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToPreviousPageAsync"
+                                    disabled="@(!CanGoToPreviousPage)">
+                                Previous
+                            </button>
+
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToNextPageAsync"
+                                    disabled="@(!CanGoToNextPage)">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // Stores the optional repair ID entered into the search form.
+    private int? repairIdSearch;
+
+    // Stores the optional registration search text.
+    private string registrationNumberSearch = string.Empty;
+
+    // Stores the optional owner-name search text.
+    private string ownerNameSearch = string.Empty;
+
+    // Stores the repair rows returned from the search service.
+    private List<Repair> repairs = new();
+
+    // Tracks whether the user has actually run a search yet.
+    private bool hasSearched;
+
+    // Tracks whether the page is currently loading search results.
+    private bool isLoading;
+
+    // Stores a page-level error message when search loading fails.
+    private string? errorMessage;
+
+    // Stores the current results page number.
+    private int currentPage = 1;
+
+    // Defines how many repairs are shown on one page.
+    private const int PageSize = 10;
+
+    // Stores the total number of matching repair records.
+    private int totalRepairCount;
+
+    // Stores the total number of available pages.
+    private int totalPages = 1;
+
+    // Shows pagination only when a non-ID search returns more than one page.
+    private bool ShowPagination =>
+        hasSearched
+        && totalRepairCount > PageSize
+        && !repairIdSearch.HasValue;
+
+    // Controls whether the Clear button should be enabled.
+    private bool CanClearSearch =>
+        repairIdSearch.HasValue
+        || !string.IsNullOrWhiteSpace(registrationNumberSearch)
+        || !string.IsNullOrWhiteSpace(ownerNameSearch)
+        || hasSearched;
+
+    // Controls whether the previous-page button should be enabled.
+    private bool CanGoToPreviousPage => !isLoading && currentPage > 1;
+
+    // Controls whether the next-page button should be enabled.
+    private bool CanGoToNextPage => !isLoading && currentPage < totalPages;
+
+    // Builds the short subtitle shown above the results area.
+    private string ResultsSubtitle =>
+        !hasSearched
+            ? "Matching repair records will appear here."
+            : totalRepairCount == 0
+                ? "No matching repair records were found."
+                : $"Showing {repairs.Count} of {totalRepairCount} repair record{(totalRepairCount == 1 ? "" : "s")}.";
+
+    // Moves to the previous results page when possible.
+    private async Task GoToPreviousPageAsync()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            await LoadSearchResultsAsync();
+        }
+    }
+
+    // Moves to the next results page when possible.
+    private async Task GoToNextPageAsync()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+            await LoadSearchResultsAsync();
+        }
+    }
+
+    // Starts a fresh search from page 1.
+    private async Task SearchAsync()
+    {
+        errorMessage = null;
+
+        // Resets the page cleanly when the user clicks Search with no filters.
+        if (!HasAnySearchFilter())
+        {
+            repairs = new List<Repair>();
+            totalRepairCount = 0;
+            totalPages = 1;
+            currentPage = 1;
+            hasSearched = false;
+            return;
+        }
+
+        currentPage = 1;
+        await LoadSearchResultsAsync();
+    }
+
+    // Loads the current page of results from the repair service.
+    private async Task LoadSearchResultsAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        // Trims text filters so accidental spaces do not affect the query.
+        var cleanedRegistrationNumber = string.IsNullOrWhiteSpace(registrationNumberSearch)
+            ? string.Empty
+            : registrationNumberSearch.Trim();
+
+        var cleanedOwnerName = string.IsNullOrWhiteSpace(ownerNameSearch)
+            ? string.Empty
+            : ownerNameSearch.Trim();
+
+        try
+        {
+            totalRepairCount = await RepairService.GetRepairSearchCountAsync(
+                repairIdSearch,
+                cleanedRegistrationNumber,
+                cleanedOwnerName);
+
+            totalPages = totalRepairCount == 0
+                ? 1
+                : (totalRepairCount + PageSize - 1) / PageSize;
+
+            if (currentPage > totalPages)
+            {
+                currentPage = totalPages;
+            }
+
+            repairs = await RepairService.SearchRepairsAsync(
+                repairIdSearch,
+                cleanedRegistrationNumber,
+                cleanedOwnerName,
+                currentPage,
+                PageSize);
+
+            hasSearched = true;
+        }
+        catch
+        {
+            repairs = new List<Repair>();
+            totalRepairCount = 0;
+            totalPages = 1;
+            currentPage = 1;
+            hasSearched = true;
+            errorMessage = "Repair records could not be loaded. Please try again.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    // Clears all filters and resets the results area.
+    private void ClearSearch()
+    {
+        repairIdSearch = null;
+        registrationNumberSearch = string.Empty;
+        ownerNameSearch = string.Empty;
+        repairs = new List<Repair>();
+        totalRepairCount = 0;
+        totalPages = 1;
+        currentPage = 1;
+        hasSearched = false;
+        errorMessage = null;
+    }
+
+    // Returns true when at least one real search filter has been entered.
+    private bool HasAnySearchFilter()
+    {
+        return repairIdSearch.HasValue
+            || !string.IsNullOrWhiteSpace(registrationNumberSearch)
+            || !string.IsNullOrWhiteSpace(ownerNameSearch);
+    }
+
+    // Lets the Enter key trigger the search from any search field.
+    private async Task HandleSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !isLoading)
+        {
+            await SearchAsync();
+        }
+    }
+}

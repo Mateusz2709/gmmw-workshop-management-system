@@ -1,0 +1,275 @@
+﻿@page "/motorists/edit/{MotoristId:int}"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Forms
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IMotoristService MotoristService
+@inject NavigationManager NavigationManager
+
+<PageTitle>@(FormModel.MotoristId == 0 ? "Edit Motorist" : $"Edit {FormModel.FirstName} {FormModel.LastName}")</PageTitle>
+
+<div class="row">
+    <div class="col-12 col-xl-9 col-xxl-8">
+        <div class="st-stack-lg">
+            <div class="st-page-header">
+                <div class="st-page-header__copy">
+                    <h1 class="st-page-title">
+                        @(FormModel.MotoristId == 0 ? "Edit Motorist" : $"Edit {FormModel.FirstName} {FormModel.LastName}")
+                    </h1>
+                    <p class="st-page-subtitle">
+                        Update the motorist’s contact and address details while keeping the record linked to vehicles and repairs.
+                    </p>
+                </div>
+
+                <div class="st-page-actions">
+                    <a href="@BackLink" class="st-btn st-btn--secondary">Back to Details</a>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+                    @errorMessage
+                </div>
+            }
+
+            @if (showValidationMessage && string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="st-alert st-alert--warning" role="alert">
+                    Please correct the highlighted fields and try again.
+                </div>
+            }
+
+            @if (isLoading)
+            {
+                <div class="st-card">
+                    <div class="st-card__body">
+                        <div class="st-alert st-alert--info mb-0" role="status">
+                            Loading motorist details...
+                        </div>
+                    </div>
+                </div>
+            }
+            else if (FormModel.MotoristId == 0)
+            {
+                <div class="st-card">
+                    <div class="st-card__body">
+                        <div class="st-alert st-alert--warning mb-0" role="alert">
+                            The requested motorist could not be found.
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <EditForm Model="FormModel"
+                          OnValidSubmit="HandleValidSubmit"
+                          OnInvalidSubmit="HandleInvalidSubmit"
+                          FormName="MotoristEdit">
+                    <DataAnnotationsValidator />
+
+                    <fieldset disabled="@isSaving" aria-busy="@isSaving">
+                        <div class="st-card st-card--allow-overflow">
+                            <div class="st-card__header">
+                                <div>
+                                    <h2 class="st-card-title">Motorist Details</h2>
+                                    <p class="st-card-subtitle">
+                                        Review and update the selected motorist record.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="st-card__body">
+                                <div class="row g-4">
+                                    <div class="col-12 col-md-6">
+                                        <div class="st-field mb-0">
+                                            <label for="first-name" class="st-label">First Name</label>
+                                            <InputText id="first-name"
+                                                       class="st-input"
+                                                       autocomplete="given-name"
+                                                       @bind-Value="FormModel.FirstName" />
+                                            <ValidationMessage For="() => FormModel.FirstName" class="validation-message" />
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12 col-md-6">
+                                        <div class="st-field mb-0">
+                                            <label for="last-name" class="st-label">Last Name</label>
+                                            <InputText id="last-name"
+                                                       class="st-input"
+                                                       autocomplete="family-name"
+                                                       @bind-Value="FormModel.LastName" />
+                                            <ValidationMessage For="() => FormModel.LastName" class="validation-message" />
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12">
+                                        <div class="st-field mb-0">
+                                            <label for="email" class="st-label">Email</label>
+                                            <InputText id="email"
+                                                       type="email"
+                                                       class="st-input"
+                                                       autocomplete="email"
+                                                       inputmode="email"
+                                                       @bind-Value="FormModel.Email" />
+                                            <ValidationMessage For="() => FormModel.Email" class="validation-message" />
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12">
+                                        <div class="st-field mb-0">
+                                            <label for="phone-number" class="st-label">Phone Number</label>
+                                            <InputText id="phone-number"
+                                                       type="tel"
+                                                       class="st-input"
+                                                       autocomplete="tel"
+                                                       inputmode="tel"
+                                                       @bind-Value="FormModel.PhoneNumber" />
+                                            <ValidationMessage For="() => FormModel.PhoneNumber" class="validation-message" />
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12">
+                                        <div class="st-field mb-0">
+                                            <label for="address" class="st-label">Address</label>
+                                            <InputTextArea id="address"
+                                                           class="st-textarea"
+                                                           autocomplete="street-address"
+                                                           @bind-Value="FormModel.Address" />
+                                            <ValidationMessage For="() => FormModel.Address" class="validation-message" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                                    <button type="submit" class="st-btn st-btn--primary" disabled="@isSaving">
+                                        @(isSaving ? "Saving Changes..." : "Save Changes")
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+                </EditForm>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // Receives the selected motorist ID from the edit page URL.
+    [Parameter]
+    public int MotoristId { get; set; }
+
+    // Stores the posted form value for the motorist edit form.
+    [SupplyParameterFromForm(FormName = "MotoristEdit")]
+    private MotoristEditViewModel? model { get; set; }
+
+    // Always provides a safe non-null model instance for page rendering and form binding.
+    private MotoristEditViewModel FormModel => model ??= new();
+
+    // Stores a page-level error message for load or save problems.
+    private string? errorMessage;
+
+    // Shows one short validation prompt instead of a full validation summary.
+    private bool showValidationMessage;
+
+    // Tracks whether the page is still loading the selected motorist.
+    private bool isLoading = true;
+
+    // Prevents duplicate submits and locks the form while saving.
+    private bool isSaving;
+
+    // Builds the safest back link for this edit page.
+    private string BackLink => MotoristId > 0 ? $"/motorists/details/{MotoristId}" : "/motorists";
+
+    // Reloads the selected motorist whenever the route parameter changes.
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        isSaving = false;
+        errorMessage = null;
+        showValidationMessage = false;
+
+        // Resets the model before loading fresh route data.
+        model = new MotoristEditViewModel();
+
+        try
+        {
+            // Loads the existing motorist record for the ID passed in the page URL.
+            var motorist = await MotoristService.GetMotoristByIdAsync(MotoristId);
+
+            // Stops early if the selected motorist record does not exist.
+            if (motorist is null)
+            {
+                return;
+            }
+
+            // Copies the loaded motorist data into the edit form model.
+            FormModel.MotoristId = motorist.MotoristId;
+            FormModel.FirstName = motorist.FirstName;
+            FormModel.LastName = motorist.LastName;
+            FormModel.Email = motorist.Email;
+            FormModel.PhoneNumber = motorist.PhoneNumber;
+            FormModel.Address = motorist.Address ?? string.Empty;
+        }
+        catch
+        {
+            // Shows a friendly fallback message if loading fails unexpectedly.
+            errorMessage = "Something went wrong while loading the motorist.";
+        }
+        finally
+        {
+            // Ends the loading state whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+
+    // Runs when the edit form is submitted with valid input.
+    private async Task HandleValidSubmit()
+    {
+        // Stops accidental double-submit while the save is already running.
+        if (isSaving)
+        {
+            return;
+        }
+
+        errorMessage = null;
+        showValidationMessage = false;
+        isSaving = true;
+
+        try
+        {
+            // Sends the edited motorist data to the service layer to update the existing record.
+            await MotoristService.UpdateMotoristAsync(FormModel);
+
+            // Returns to the details page for the same motorist after a successful update.
+            NavigationManager.NavigateTo($"/motorists/details/{FormModel.MotoristId}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Shows business-rule errors such as duplicate email without crashing the page.
+            errorMessage = ex.Message;
+        }
+        catch
+        {
+            // Shows a fallback message for unexpected save failures.
+            errorMessage = "Something went wrong while updating the motorist.";
+        }
+        finally
+        {
+            // Re-enables the form whether the save succeeded or failed.
+            isSaving = false;
+        }
+    }
+
+    // Runs when the form is submitted but validation fails.
+    private void HandleInvalidSubmit(EditContext editContext)
+    {
+        // Keeps the top message short and leaves detailed errors next to each field.
+        errorMessage = null;
+        showValidationMessage = true;
+    }
+}

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="GMMW.Tests/GMMW.Tests.csproj" />
+  <Project Path="GMMW.Web/GMMW.Web.csproj" />
+</Solution>

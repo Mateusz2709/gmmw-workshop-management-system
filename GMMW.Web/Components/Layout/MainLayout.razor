@@ -1,0 +1,65 @@
+﻿@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+
+<AuthorizeView>
+    <Authorized>
+        <div class="st-shell">
+            <aside class="st-sidebar" aria-label="Primary navigation">
+                <div class="st-sidebar__brand">
+                    <a href="/dashboard" class="st-brand" aria-label="Go to dashboard">
+                        <div class="st-brand__text">
+                            <span class="st-brand__title">GMMW</span>
+                            <span class="st-brand__subtitle">Workshop Management</span>
+                        </div>
+                    </a>
+                </div>
+
+                <NavMenu />
+            </aside>
+
+            <div class="st-workspace">
+                <header class="st-topbar">
+                    <div class="container-fluid px-3 px-lg-4 px-xxl-5">
+                        <div class="d-flex align-items-center justify-content-between w-100">
+                            <div class="st-topbar__context">
+                                <h1 class="st-topbar__title">Workshop Management</h1>
+                                <p class="st-topbar__subtitle">Internal Workspace</p>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <main class="st-content">
+                    <div class="container-fluid px-0">
+                        @Body
+                    </div>
+                </main>
+            </div>
+        </div>
+    </Authorized>
+
+    <NotAuthorized>
+        <div class="st-public-shell">
+            <header class="st-public-header">
+                <div class="container-fluid px-3 px-lg-4 px-xxl-5">
+                    <div class="d-flex align-items-center justify-content-between gap-3 w-100">
+                        <a href="/" class="st-brand st-brand--public" aria-label="Go to home page">
+                            <div class="st-brand__text">
+                                <span class="st-brand__title">GMMW</span>
+                                <span class="st-brand__subtitle">Workshop Management</span>
+                            </div>
+                        </a>
+
+                        <a href="/Account/Login" class="st-link-button">
+                            Login
+                        </a>
+                    </div>
+                </div>
+            </header>
+
+            <main class="st-public-content">
+                @Body
+            </main>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>

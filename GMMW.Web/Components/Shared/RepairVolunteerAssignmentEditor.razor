@@ -1,0 +1,860 @@
+﻿@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Forms
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@inject IVolunteerWorkService VolunteerWorkService
+
+<div class="st-card st-card--allow-overflow">
+    <div class="st-card__header">
+        <div>
+            <h2 class="st-card-title">Assigned Volunteers</h2>
+            <p class="st-card-subtitle">Add, review, and manage volunteer time linked to this repair.</p>
+        </div>
+    </div>
+
+    <div class="st-card__body">
+        @if (!isLoading && string.IsNullOrWhiteSpace(errorMessage) && RepairId > 0)
+        {
+            @if (!string.IsNullOrWhiteSpace(successMessage))
+            {
+                <div class="st-alert st-alert--success mb-3" role="status" aria-live="polite">
+                    @successMessage
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(createErrorMessage))
+            {
+                <div class="st-alert st-alert--danger mb-3" role="alert">
+                    @createErrorMessage
+                </div>
+            }
+
+            <EditForm Model="createModel" OnValidSubmit="HandleCreateAssignmentSubmit" FormName="RepairVolunteerAssignmentCreate">
+                <DataAnnotationsValidator />
+
+                <fieldset disabled="@isCreateBusy" aria-busy="@isCreateBusy">
+                    <div class="row g-4 align-items-start">
+                        <div class="col-12 col-lg-8">
+                            @if (selectedVolunteer is null)
+                            {
+                                <div class="st-field mb-0">
+                                    <label for="volunteer-search" class="st-label">Search Volunteer</label>
+
+                                    <div class="row g-2 align-items-end">
+                                        <div class="col-12 col-sm">
+                                            <div class="st-autocomplete">
+                                                <input id="volunteer-search"
+                                                       class="st-input"
+                                                       type="text"
+                                                       placeholder="Search volunteer by name"
+                                                       value="@volunteerSearchTerm"
+                                                       @oninput="HandleVolunteerSearchInput"
+                                                       @onfocus="HandleVolunteerSearchFocus"
+                                                       @onblur="HandleVolunteerSearchBlur" />
+
+                                                @if (isVolunteerDropdownOpen && volunteerSearchResults.Any())
+                                                {
+                                                    <div class="st-autocomplete__menu">
+                                                        @foreach (var volunteer in volunteerSearchResults)
+                                                        {
+                                                            <button type="button"
+                                                                    class="st-autocomplete__item"
+                                                                    @onclick="() => SelectVolunteer(volunteer)">
+                                                                <span class="st-autocomplete__primary">@volunteer.DisplayName</span>
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+
+                                            <ValidationMessage For="() => createModel.ApplicationUserId" class="validation-message" />
+                                        </div>
+
+                                        <div class="col-12 col-sm-auto">
+                                            <button type="button"
+                                                    class="st-btn st-btn--secondary w-100"
+                                                    @onclick="ClearVolunteerSearch"
+                                                    disabled="@isCreateBusy">
+                                                Clear
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="st-selected-summary">
+                                    <div class="st-selected-summary__title">@selectedVolunteer.DisplayName</div>
+                                </div>
+
+                                <div class="mt-3">
+                                    <button type="button"
+                                            class="st-btn st-btn--secondary"
+                                            @onclick="ClearVolunteerSearch"
+                                            disabled="@isCreateBusy">
+                                        Change Volunteer
+                                    </button>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="col-12 col-lg-4">
+                            @if (HasSelectedVolunteer)
+                            {
+                                <div class="st-inline-status st-inline-status--info">
+                                    <strong>Selected volunteer</strong>
+                                    <span>@selectedVolunteer?.DisplayName</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="st-inline-status st-inline-status--warning">
+                                    <strong>No volunteer selected</strong>
+                                    <span>Please choose a volunteer before saving.</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="row g-4 mt-1">
+                        <div class="col-12 col-md-4">
+                            <div class="st-field mb-0">
+                                <label for="hours-spent" class="st-label">Hours Spent</label>
+                                <InputNumber id="hours-spent" class="st-input" @bind-Value="createModel.HoursSpent" />
+                                <ValidationMessage For="() => createModel.HoursSpent" class="validation-message" />
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-md-8">
+                            <div class="st-field mb-0">
+                                <label for="assignment-notes" class="st-label">Notes</label>
+                                <InputTextArea id="assignment-notes"
+                                               class="st-textarea"
+                                               rows="4"
+                                               @bind-Value="createModel.Notes" />
+                                <ValidationMessage For="() => createModel.Notes" class="validation-message" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                        <button type="submit"
+                                class="st-btn st-btn--primary"
+                                disabled="@(!HasSelectedVolunteer || isCreateBusy)">
+                            @(isCreateBusy ? "Adding Volunteer..." : "Add Volunteer")
+                        </button>
+                    </div>
+                </fieldset>
+            </EditForm>
+        }
+
+        @if (isLoading)
+        {
+            <div class="st-alert st-alert--info mt-4" role="status">
+                Loading volunteer assignments...
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            <div class="st-alert st-alert--danger mt-4" role="alert">
+                @errorMessage
+            </div>
+        }
+        else if (assignments.Count == 0)
+        {
+            <div class="st-empty mt-4">
+                <span class="st-empty__title">No volunteers assigned yet</span>
+                No volunteer assignments are currently linked to this repair.
+            </div>
+        }
+        else
+        {
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mt-4 mb-3">
+                <p class="st-card-subtitle mb-0">
+                    These volunteer assignments are currently linked to this repair.
+                </p>
+
+                <div class="st-inline-status st-inline-status--info">
+                    Total recorded hours: @totalRecordedHours.ToString("0.##")
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(deleteErrorMessage))
+            {
+                <div class="st-alert st-alert--danger mb-3" role="alert">
+                    @deleteErrorMessage
+                </div>
+            }
+
+            @if (pendingDeleteAssignmentId.HasValue)
+            {
+                <div class="st-alert st-alert--warning mb-3" role="alert">
+                    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
+                        <span>Are you sure you want to remove this volunteer assignment?</span>
+
+                        <div class="d-flex flex-column flex-sm-row gap-2">
+                            <button type="button"
+                                    class="st-btn st-btn--danger"
+                                    @onclick="ConfirmDeleteAssignmentAsync"
+                                    disabled="@isDeleteBusy">
+                                @(isDeleteBusy ? "Removing..." : "Remove Assignment")
+                            </button>
+
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="CancelDeleteAssignment"
+                                    disabled="@isDeleteBusy">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (editingAssignmentId.HasValue)
+            {
+                <div class="st-card mb-3">
+                    <div class="st-card__header">
+                        <div>
+                            <h3 class="st-card-title">Edit Volunteer Assignment</h3>
+                            <p class="st-card-subtitle">Update the selected volunteer link and recorded time for this repair.</p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        @if (!string.IsNullOrWhiteSpace(editErrorMessage))
+                        {
+                            <div class="st-alert st-alert--danger mb-3" role="alert">
+                                @editErrorMessage
+                            </div>
+                        }
+
+                        <EditForm Model="editModel" OnValidSubmit="HandleEditAssignmentSubmit" FormName="RepairVolunteerAssignmentEdit">
+                            <DataAnnotationsValidator />
+
+                            <fieldset disabled="@isEditBusy" aria-busy="@isEditBusy">
+                                <div class="row g-4 align-items-start">
+                                    <div class="col-12 col-lg-8">
+                                        @if (selectedEditVolunteer is null)
+                                        {
+                                            <div class="st-field mb-0">
+                                                <label for="edit-volunteer-search" class="st-label">Search Volunteer</label>
+
+                                                <div class="row g-2 align-items-end">
+                                                    <div class="col-12 col-sm">
+                                                        <div class="st-autocomplete">
+                                                            <input id="edit-volunteer-search"
+                                                                   class="st-input"
+                                                                   type="text"
+                                                                   placeholder="Search volunteer by name"
+                                                                   value="@editVolunteerSearchTerm"
+                                                                   @oninput="HandleEditVolunteerSearchInput"
+                                                                   @onfocus="HandleEditVolunteerSearchFocus"
+                                                                   @onblur="HandleEditVolunteerSearchBlur" />
+
+                                                            @if (isEditVolunteerDropdownOpen && editVolunteerSearchResults.Any())
+                                                            {
+                                                                <div class="st-autocomplete__menu">
+                                                                    @foreach (var volunteer in editVolunteerSearchResults)
+                                                                    {
+                                                                        <button type="button"
+                                                                                class="st-autocomplete__item"
+                                                                                @onclick="() => SelectEditVolunteer(volunteer)">
+                                                                            <span class="st-autocomplete__primary">@volunteer.DisplayName</span>
+                                                                        </button>
+                                                                    }
+                                                                </div>
+                                                            }
+                                                        </div>
+
+                                                        <ValidationMessage For="() => editModel.ApplicationUserId" class="validation-message" />
+                                                    </div>
+
+                                                    <div class="col-12 col-sm-auto">
+                                                        <button type="button"
+                                                                class="st-btn st-btn--secondary w-100"
+                                                                @onclick="ClearEditVolunteerSearch"
+                                                                disabled="@isEditBusy">
+                                                            Clear
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="st-selected-summary">
+                                                <div class="st-selected-summary__title">@selectedEditVolunteer.DisplayName</div>
+                                            </div>
+
+                                            <div class="mt-3">
+                                                <button type="button"
+                                                        class="st-btn st-btn--secondary"
+                                                        @onclick="ClearEditVolunteerSearch"
+                                                        disabled="@isEditBusy">
+                                                    Change Volunteer
+                                                </button>
+                                            </div>
+                                        }
+                                    </div>
+
+                                    <div class="col-12 col-lg-4">
+                                        @if (HasSelectedEditVolunteer)
+                                        {
+                                            <div class="st-inline-status st-inline-status--info">
+                                                <strong>Selected volunteer</strong>
+                                                <span>@selectedEditVolunteer?.DisplayName</span>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="st-inline-status st-inline-status--warning">
+                                                <strong>No volunteer selected</strong>
+                                                <span>Please choose a volunteer before saving.</span>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="row g-4 mt-1">
+                                    <div class="col-12 col-md-4">
+                                        <div class="st-field mb-0">
+                                            <label for="edit-hours-spent" class="st-label">Hours Spent</label>
+                                            <InputNumber id="edit-hours-spent" class="st-input" @bind-Value="editModel.HoursSpent" />
+                                            <ValidationMessage For="() => editModel.HoursSpent" class="validation-message" />
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12 col-md-8">
+                                        <div class="st-field mb-0">
+                                            <label for="edit-assignment-notes" class="st-label">Notes</label>
+                                            <InputTextArea id="edit-assignment-notes"
+                                                           class="st-textarea"
+                                                           rows="4"
+                                                           @bind-Value="editModel.Notes" />
+                                            <ValidationMessage For="() => editModel.Notes" class="validation-message" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                                    <button type="button"
+                                            class="st-btn st-btn--secondary"
+                                            @onclick="CancelEditAssignment"
+                                            disabled="@isEditBusy">
+                                        Cancel
+                                    </button>
+
+                                    <button type="submit"
+                                            class="st-btn st-btn--primary"
+                                            disabled="@(!HasSelectedEditVolunteer || isEditBusy)">
+                                        @(isEditBusy ? "Saving Changes..." : "Save Changes")
+                                    </button>
+                                </div>
+                            </fieldset>
+                        </EditForm>
+                    </div>
+                </div>
+            }
+
+            <div class="st-table-shell">
+                <div class="table-responsive">
+                    <table class="st-table">
+                        <thead>
+                            <tr>
+                                <th>Volunteer</th>
+                                <th>Hours Spent</th>
+                                <th>Notes</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var assignment in assignments)
+                            {
+                                <tr>
+                                    <td>@GetVolunteerDisplayName(assignment)</td>
+                                    <td>@assignment.HoursSpent.ToString("0.##")</td>
+                                    <td>@(string.IsNullOrWhiteSpace(assignment.Notes) ? "—" : assignment.Notes)</td>
+                                    <td class="text-end">
+                                        <div class="d-flex justify-content-end gap-2">
+                                            <button type="button"
+                                                    class="st-btn st-btn--secondary"
+                                                    @onclick="() => BeginEditAssignmentAsync(assignment.RepairVolunteerAssignmentId)"
+                                                    disabled="@IsAnyBusy">
+                                                Edit
+                                            </button>
+
+                                            <button type="button"
+                                                    class="st-btn st-btn--danger"
+                                                    @onclick="() => RequestDeleteAssignment(assignment.RepairVolunteerAssignmentId)"
+                                                    disabled="@IsAnyBusy">
+                                                Remove
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int RepairId { get; set; }
+
+    private List<RepairVolunteerAssignment> assignments = new();
+    private List<ApplicationUserOptionViewModel> volunteerOptions = new();
+
+    private List<ApplicationUserOptionViewModel> volunteerSearchResults = new();
+    private ApplicationUserOptionViewModel? selectedVolunteer;
+    private string volunteerSearchTerm = string.Empty;
+    private bool isVolunteerDropdownOpen;
+
+    private List<ApplicationUserOptionViewModel> editVolunteerSearchResults = new();
+    private ApplicationUserOptionViewModel? selectedEditVolunteer;
+    private string editVolunteerSearchTerm = string.Empty;
+    private bool isEditVolunteerDropdownOpen;
+
+    private RepairVolunteerAssignmentCreateViewModel createModel = new();
+    private RepairVolunteerAssignmentEditViewModel editModel = new();
+
+    private decimal totalRecordedHours;
+    private bool isLoading;
+    private string? errorMessage;
+    private string? createErrorMessage;
+    private string? editErrorMessage;
+    private string? deleteErrorMessage;
+    private string? successMessage;
+
+    private int? editingAssignmentId;
+    private int? pendingDeleteAssignmentId;
+
+    private bool isCreateBusy;
+    private bool isEditBusy;
+    private bool isDeleteBusy;
+
+    private bool IsAnyBusy => isCreateBusy || isEditBusy || isDeleteBusy;
+
+    private bool HasSelectedVolunteer =>
+        !string.IsNullOrWhiteSpace(createModel.ApplicationUserId) && selectedVolunteer is not null;
+
+    private bool HasSelectedEditVolunteer =>
+        !string.IsNullOrWhiteSpace(editModel.ApplicationUserId) && selectedEditVolunteer is not null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+
+        errorMessage = null;
+        successMessage = null;
+        createErrorMessage = null;
+        editErrorMessage = null;
+        deleteErrorMessage = null;
+
+        editingAssignmentId = null;
+        pendingDeleteAssignmentId = null;
+
+        isVolunteerDropdownOpen = false;
+        isEditVolunteerDropdownOpen = false;
+
+        isCreateBusy = false;
+        isEditBusy = false;
+        isDeleteBusy = false;
+
+        volunteerSearchResults = new();
+        editVolunteerSearchResults = new();
+        volunteerSearchTerm = string.Empty;
+        editVolunteerSearchTerm = string.Empty;
+
+        selectedVolunteer = null;
+        selectedEditVolunteer = null;
+
+        if (RepairId <= 0)
+        {
+            assignments = new();
+            volunteerOptions = new();
+            totalRecordedHours = 0;
+            createModel = new();
+            editModel = new();
+            isLoading = false;
+            return;
+        }
+
+        createModel = new RepairVolunteerAssignmentCreateViewModel
+        {
+            RepairId = RepairId
+        };
+
+        try
+        {
+            volunteerOptions = await VolunteerWorkService.GetAvailableRepairVolunteersAsync();
+            await RefreshAssignmentsAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+            assignments = new();
+            volunteerOptions = new();
+            totalRecordedHours = 0;
+        }
+        catch
+        {
+            errorMessage = "Volunteer assignments could not be loaded.";
+            assignments = new();
+            volunteerOptions = new();
+            totalRecordedHours = 0;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshAssignmentsAsync()
+    {
+        assignments = await VolunteerWorkService.GetAssignmentsByRepairIdAsync(RepairId);
+        totalRecordedHours = assignments.Sum(assignment => assignment.HoursSpent);
+    }
+
+    private string GetVolunteerDisplayName(RepairVolunteerAssignment assignment)
+    {
+        if (!string.IsNullOrWhiteSpace(assignment.ApplicationUser?.FullName))
+        {
+            return assignment.ApplicationUser.FullName;
+        }
+
+        return "Unknown volunteer";
+    }
+
+    private Task HandleVolunteerSearchInput(ChangeEventArgs e)
+    {
+        volunteerSearchTerm = e.Value?.ToString() ?? string.Empty;
+
+        successMessage = null;
+        createErrorMessage = null;
+
+        selectedVolunteer = null;
+        createModel.ApplicationUserId = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(volunteerSearchTerm) || volunteerSearchTerm.Trim().Length < 2)
+        {
+            volunteerSearchResults.Clear();
+            isVolunteerDropdownOpen = false;
+            return Task.CompletedTask;
+        }
+
+        volunteerSearchResults = volunteerOptions
+            .Where(option => option.DisplayName.Contains(volunteerSearchTerm.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Take(8)
+            .ToList();
+
+        isVolunteerDropdownOpen = volunteerSearchResults.Any();
+        return Task.CompletedTask;
+    }
+
+    private void SelectVolunteer(ApplicationUserOptionViewModel volunteer)
+    {
+        selectedVolunteer = volunteer;
+        createModel.ApplicationUserId = volunteer.UserId;
+        volunteerSearchTerm = volunteer.DisplayName;
+        volunteerSearchResults.Clear();
+        isVolunteerDropdownOpen = false;
+        createErrorMessage = null;
+    }
+
+    private void ClearVolunteerSearch()
+    {
+        volunteerSearchTerm = string.Empty;
+        volunteerSearchResults.Clear();
+        selectedVolunteer = null;
+        createModel.ApplicationUserId = string.Empty;
+        isVolunteerDropdownOpen = false;
+        createErrorMessage = null;
+    }
+
+    private void HandleVolunteerSearchFocus()
+    {
+        if (volunteerSearchResults.Any())
+        {
+            isVolunteerDropdownOpen = true;
+        }
+    }
+
+    private async Task HandleVolunteerSearchBlur()
+    {
+        await Task.Delay(150);
+        isVolunteerDropdownOpen = false;
+    }
+
+    private async Task HandleCreateAssignmentSubmit()
+    {
+        if (isCreateBusy)
+        {
+            return;
+        }
+
+        successMessage = null;
+        createErrorMessage = null;
+        editErrorMessage = null;
+        deleteErrorMessage = null;
+
+        isCreateBusy = true;
+
+        try
+        {
+            createModel.RepairId = RepairId;
+
+            await VolunteerWorkService.CreateAssignmentAsync(createModel);
+
+            successMessage = "Volunteer assignment added successfully.";
+
+            createModel = new RepairVolunteerAssignmentCreateViewModel
+            {
+                RepairId = RepairId
+            };
+
+            selectedVolunteer = null;
+            volunteerSearchTerm = string.Empty;
+            volunteerSearchResults.Clear();
+            isVolunteerDropdownOpen = false;
+
+            await RefreshAssignmentsAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            createErrorMessage = ex.Message;
+        }
+        catch
+        {
+            createErrorMessage = "Volunteer assignment could not be added.";
+        }
+        finally
+        {
+            isCreateBusy = false;
+        }
+    }
+
+    private void RequestDeleteAssignment(int repairVolunteerAssignmentId)
+    {
+        successMessage = null;
+        deleteErrorMessage = null;
+        editErrorMessage = null;
+
+        CancelEditAssignment();
+        pendingDeleteAssignmentId = repairVolunteerAssignmentId;
+    }
+
+    private void CancelDeleteAssignment()
+    {
+        pendingDeleteAssignmentId = null;
+        deleteErrorMessage = null;
+    }
+
+    private async Task ConfirmDeleteAssignmentAsync()
+    {
+        if (!pendingDeleteAssignmentId.HasValue || isDeleteBusy)
+        {
+            return;
+        }
+
+        isDeleteBusy = true;
+        deleteErrorMessage = null;
+        successMessage = null;
+
+        try
+        {
+            await VolunteerWorkService.DeleteAssignmentAsync(pendingDeleteAssignmentId.Value);
+
+            successMessage = "Volunteer assignment removed successfully.";
+            pendingDeleteAssignmentId = null;
+
+            await RefreshAssignmentsAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            deleteErrorMessage = ex.Message;
+        }
+        catch
+        {
+            deleteErrorMessage = "Volunteer assignment could not be removed.";
+        }
+        finally
+        {
+            isDeleteBusy = false;
+        }
+    }
+
+    private async Task BeginEditAssignmentAsync(int repairVolunteerAssignmentId)
+    {
+        if (IsAnyBusy)
+        {
+            return;
+        }
+
+        successMessage = null;
+        editErrorMessage = null;
+        deleteErrorMessage = null;
+        pendingDeleteAssignmentId = null;
+
+        try
+        {
+            var assignment = await VolunteerWorkService.GetAssignmentForEditAsync(repairVolunteerAssignmentId);
+
+            if (assignment is null)
+            {
+                editErrorMessage = "The selected volunteer assignment could not be found.";
+                editingAssignmentId = null;
+                return;
+            }
+
+            editingAssignmentId = repairVolunteerAssignmentId;
+            editModel = assignment;
+
+            selectedEditVolunteer = volunteerOptions
+                .FirstOrDefault(option => option.UserId == editModel.ApplicationUserId);
+
+            if (selectedEditVolunteer is null)
+            {
+                var existingRow = assignments.FirstOrDefault(row => row.RepairVolunteerAssignmentId == repairVolunteerAssignmentId);
+
+                if (existingRow is not null)
+                {
+                    selectedEditVolunteer = new ApplicationUserOptionViewModel
+                    {
+                        UserId = existingRow.ApplicationUserId,
+                        DisplayName = GetVolunteerDisplayName(existingRow)
+                    };
+                }
+            }
+
+            editVolunteerSearchTerm = selectedEditVolunteer?.DisplayName ?? string.Empty;
+            editVolunteerSearchResults.Clear();
+            isEditVolunteerDropdownOpen = false;
+        }
+        catch
+        {
+            editErrorMessage = "The selected volunteer assignment could not be loaded.";
+            editingAssignmentId = null;
+        }
+    }
+
+    private Task HandleEditVolunteerSearchInput(ChangeEventArgs e)
+    {
+        editVolunteerSearchTerm = e.Value?.ToString() ?? string.Empty;
+
+        successMessage = null;
+        editErrorMessage = null;
+
+        selectedEditVolunteer = null;
+        editModel.ApplicationUserId = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(editVolunteerSearchTerm) || editVolunteerSearchTerm.Trim().Length < 2)
+        {
+            editVolunteerSearchResults.Clear();
+            isEditVolunteerDropdownOpen = false;
+            return Task.CompletedTask;
+        }
+
+        editVolunteerSearchResults = volunteerOptions
+            .Where(option => option.DisplayName.Contains(editVolunteerSearchTerm.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Take(8)
+            .ToList();
+
+        isEditVolunteerDropdownOpen = editVolunteerSearchResults.Any();
+        return Task.CompletedTask;
+    }
+
+    private void SelectEditVolunteer(ApplicationUserOptionViewModel volunteer)
+    {
+        selectedEditVolunteer = volunteer;
+        editModel.ApplicationUserId = volunteer.UserId;
+        editVolunteerSearchTerm = volunteer.DisplayName;
+        editVolunteerSearchResults.Clear();
+        isEditVolunteerDropdownOpen = false;
+        editErrorMessage = null;
+    }
+
+    private void ClearEditVolunteerSearch()
+    {
+        editVolunteerSearchTerm = string.Empty;
+        editVolunteerSearchResults.Clear();
+        selectedEditVolunteer = null;
+        editModel.ApplicationUserId = string.Empty;
+        isEditVolunteerDropdownOpen = false;
+        editErrorMessage = null;
+    }
+
+    private void HandleEditVolunteerSearchFocus()
+    {
+        if (editVolunteerSearchResults.Any())
+        {
+            isEditVolunteerDropdownOpen = true;
+        }
+    }
+
+    private async Task HandleEditVolunteerSearchBlur()
+    {
+        await Task.Delay(150);
+        isEditVolunteerDropdownOpen = false;
+    }
+
+    private void CancelEditAssignment()
+    {
+        editingAssignmentId = null;
+        editModel = new RepairVolunteerAssignmentEditViewModel();
+        selectedEditVolunteer = null;
+        editVolunteerSearchTerm = string.Empty;
+        editVolunteerSearchResults.Clear();
+        isEditVolunteerDropdownOpen = false;
+        editErrorMessage = null;
+    }
+
+    private async Task HandleEditAssignmentSubmit()
+    {
+        if (!editingAssignmentId.HasValue || isEditBusy)
+        {
+            return;
+        }
+
+        successMessage = null;
+        editErrorMessage = null;
+        deleteErrorMessage = null;
+
+        isEditBusy = true;
+
+        try
+        {
+            editModel.RepairId = RepairId;
+
+            await VolunteerWorkService.UpdateAssignmentAsync(editModel);
+
+            successMessage = "Volunteer assignment updated successfully.";
+
+            editingAssignmentId = null;
+            editModel = new RepairVolunteerAssignmentEditViewModel();
+            selectedEditVolunteer = null;
+            editVolunteerSearchTerm = string.Empty;
+            editVolunteerSearchResults.Clear();
+            isEditVolunteerDropdownOpen = false;
+
+            await RefreshAssignmentsAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            editErrorMessage = ex.Message;
+        }
+        catch
+        {
+            editErrorMessage = "Volunteer assignment could not be updated.";
+        }
+        finally
+        {
+            isEditBusy = false;
+        }
+    }
+}

@@ -1,0 +1,318 @@
+﻿@page "/admin"
+@page "/admin/users"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize(Roles = "SuperUser")]
+@inject IUserAdminService UserAdminService
+
+<PageTitle>Users</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Users</h1>
+            <p class="st-page-subtitle">
+                Manage internal system users, account status, and access roles.
+            </p>
+        </div>
+
+        <div class="st-page-actions">
+            <a href="/admin/users/create" class="st-btn st-btn--primary">Create User</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Search Users</h2>
+                <p class="st-card-subtitle">
+                    Search by name or email. Leave the box empty to browse all users.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-lg">
+                    <div class="st-field mb-0">
+                        <label for="user-search" class="st-label">Search Term</label>
+                        <InputText id="user-search"
+                                   class="st-input"
+                                   placeholder="Search by name or email"
+                                   @bind-Value="searchTerm"
+                                   @onkeydown="HandleSearchKeyDown" />
+                    </div>
+                </div>
+
+                <div class="col-12 col-lg-auto">
+                    <div class="d-flex flex-column flex-sm-row gap-2">
+                        <button type="button"
+                                class="st-btn st-btn--primary"
+                                @onclick="SearchAsync"
+                                disabled="@isLoading">
+                            Search
+                        </button>
+
+                        <button type="button"
+                                class="st-btn st-btn--secondary"
+                                @onclick="ClearSearchAsync"
+                                disabled="@(!CanClearSearch || isLoading)">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">User Results</h2>
+                <p class="st-card-subtitle">
+                    @ResultsSubtitle
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            @if (isLoading)
+            {
+                <div class="st-alert st-alert--info mb-0" role="status">
+                    Loading user records...
+                </div>
+            }
+            else if (users.Count == 0)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">No users found</span>
+                    @(HasSearchTerm
+                        ? "Try a different name or email search."
+                        : "Create a new internal user or refine the list with a search term.")
+                </div>
+            }
+            else
+            {
+                <div class="st-table-shell">
+                    <div class="table-responsive">
+                        <table class="st-table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Access</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var user in users)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">@user.FullName</div>
+                                        </td>
+                                        <td>@(string.IsNullOrWhiteSpace(user.Email) ? "—" : user.Email)</td>
+                                        <td>@(string.IsNullOrWhiteSpace(user.RoleSummary) ? "—" : user.RoleSummary)</td>
+                                        <td>
+                                            <span class="st-inline-status @(user.IsActive ? "st-inline-status--info" : "st-inline-status--warning")">
+                                                @(user.IsActive ? "Active" : "Disabled")
+                                            </span>
+                                        </td>
+                                        <td class="text-end">
+                                            <div class="d-flex flex-wrap justify-content-end gap-2">
+                                                <a href="@($"/admin/users/edit/{user.UserId}")"
+                                                       class="st-btn st-btn--secondary">
+                                                    Edit
+                                                </a>
+
+                                                <a href="@($"/admin/users/roles/{user.UserId}")"
+                                                       class="st-btn st-btn--secondary">
+                                                    Manage Roles
+                                                </a>
+
+                                                <a href="@($"/admin/users/reset-password/{user.UserId}")"
+                                                       class="st-btn st-btn--secondary">
+                                                    Reset Password
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                @if (ShowPagination)
+                {
+                    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mt-4 pt-4 border-top">
+                        <p class="mb-0">Page @currentPage of @totalPages</p>
+
+                        <div class="d-flex gap-2">
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToPreviousPageAsync"
+                                    disabled="@(currentPage == 1 || isLoading)">
+                                Previous
+                            </button>
+
+                            <button type="button"
+                                    class="st-btn st-btn--secondary"
+                                    @onclick="GoToNextPageAsync"
+                                    disabled="@(currentPage >= totalPages || isLoading)">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // Stores a page-level error message for failed user-loading operations.
+    private string? errorMessage;
+
+    // Stores the current admin search text entered into the search box.
+    private string? searchTerm;
+
+    // Stores the current page of user results shown in the table.
+    private List<UserListItemViewModel> users = new();
+
+    // Stores the currently selected page number for pagination.
+    private int currentPage = 1;
+
+    // Defines how many user records are shown on one page.
+    private const int PageSize = 10;
+
+    // Stores the total number of users matching the current search filter.
+    private int totalUserCount;
+
+    // Stores the total number of result pages.
+    private int totalPages = 1;
+
+    // Tracks whether the page is currently loading data.
+    private bool isLoading;
+
+    // Shows whether the current search box actually contains something worth clearing.
+    private bool CanClearSearch => !string.IsNullOrWhiteSpace(searchTerm);
+
+    // Helps the page switch messages depending on whether the admin is searching or browsing all users.
+    private bool HasSearchTerm => !string.IsNullOrWhiteSpace(searchTerm);
+
+    // Controls whether pagination buttons should be shown.
+    private bool ShowPagination => totalUserCount > PageSize;
+
+    // Builds the short results summary shown in the results card header.
+    private string ResultsSubtitle =>
+        totalUserCount == 0
+            ? (HasSearchTerm ? "No matching users were found for the current search." : "No internal users are currently available.")
+            : $"Showing {users.Count} of {totalUserCount} user record{(totalUserCount == 1 ? "" : "s")}.";
+
+    // Loads the first page of results when the page opens.
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSearchResultsAsync();
+    }
+
+    // Starts a fresh search and returns to page 1.
+    private async Task SearchAsync()
+    {
+        currentPage = 1;
+        await LoadSearchResultsAsync();
+    }
+
+    // Clears the search box, returns to page 1, and reloads all users.
+    private async Task ClearSearchAsync()
+    {
+        searchTerm = string.Empty;
+        currentPage = 1;
+        await LoadSearchResultsAsync();
+    }
+
+    // Moves to the previous page when possible.
+    private async Task GoToPreviousPageAsync()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            await LoadSearchResultsAsync();
+        }
+    }
+
+    // Moves to the next page when possible.
+    private async Task GoToNextPageAsync()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+            await LoadSearchResultsAsync();
+        }
+    }
+
+    // Lets Enter trigger the search without turning the search area into a separate form.
+    private async Task HandleSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !isLoading)
+        {
+            await SearchAsync();
+        }
+    }
+
+    // Loads the current page of user results from the service layer.
+    private async Task LoadSearchResultsAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        // Trims the search term so accidental spaces do not affect the query.
+        var query = string.IsNullOrWhiteSpace(searchTerm)
+            ? null
+            : searchTerm.Trim();
+
+        try
+        {
+            // Gets the total matching user count first so pagination can be calculated correctly.
+            totalUserCount = await UserAdminService.GetUserSearchCountAsync(query);
+
+            // Calculates how many result pages exist for the current search.
+            totalPages = totalUserCount == 0
+                ? 1
+                : (totalUserCount + PageSize - 1) / PageSize;
+
+            // Pulls the current page back into range if the result size changed.
+            if (currentPage > totalPages)
+            {
+                currentPage = totalPages;
+            }
+
+            // Loads just the visible page of matching users.
+            users = await UserAdminService.SearchUsersAsync(query, currentPage, PageSize);
+        }
+        catch
+        {
+            // Resets the page state cleanly if loading fails.
+            users = new List<UserListItemViewModel>();
+            totalUserCount = 0;
+            totalPages = 1;
+            errorMessage = "An error occurred while loading user records.";
+        }
+        finally
+        {
+            // Ends the loading state whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+}

@@ -1,0 +1,582 @@
+﻿@page "/reports/volunteer-time"
+@rendermode InteractiveServer
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using GMMW.Web.Components.Shared
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@inject IVolunteerWorkService VolunteerWorkService
+
+<PageTitle>Volunteer Time Report</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Volunteer Time Report</h1>
+            <p class="st-page-subtitle">
+                Review total volunteer hours and average repair time by month, and optionally narrow the results to one volunteer.
+            </p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    <div class="st-card st-card--allow-overflow">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Report Filters</h2>
+                <p class="st-card-subtitle">
+                    Select a month and year, and optionally choose one volunteer to refine the report results.
+                </p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            <div class="row g-4 align-items-end">
+                <div class="col-12 col-md-4 col-xl-3">
+                    <StSelectPicker Label="Month"
+                                    Value="@SelectedMonthValue"
+                                    ValueChanged="OnSelectedMonthChangedAsync"
+                                    Options="MonthOptions" />
+                </div>
+
+                <div class="col-12 col-md-4 col-xl-3">
+                    <StSelectPicker Label="Year"
+                                    Value="@SelectedYearValue"
+                                    ValueChanged="OnSelectedYearChangedAsync"
+                                    Options="YearOptions" />
+                </div>
+
+                <div class="col-12 col-xl-6">
+                    <div class="st-field mb-0">
+                        <label for="volunteer-filter-search" class="st-label">Volunteer (Optional)</label>
+
+                        <div class="row g-2 align-items-end">
+                            <div class="col-12 col-sm">
+                                @if (selectedVolunteerFilter is null)
+                                {
+                                    <div class="st-autocomplete">
+                                        <input id="volunteer-filter-search"
+                                               class="st-input"
+                                               type="text"
+                                               placeholder="Type at least 2 characters"
+                                               value="@volunteerFilterSearchTerm"
+                                               @oninput="HandleVolunteerFilterInput"
+                                               @onfocus="HandleVolunteerFilterFocus"
+                                               @onblur="HandleVolunteerFilterBlur" />
+
+                                        @if (isVolunteerFilterDropdownOpen && volunteerFilterSearchResults.Any())
+                                        {
+                                            <div class="st-autocomplete__menu">
+                                                @foreach (var volunteer in volunteerFilterSearchResults)
+                                                {
+                                                    <button type="button"
+                                                            class="st-autocomplete__item"
+                                                            @onclick="() => SelectVolunteerFilter(volunteer)">
+                                                        <span class="st-autocomplete__primary">@volunteer.DisplayName</span>
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="st-selected-summary">
+                                        <div class="st-selected-summary__title">@selectedVolunteerFilter.DisplayName</div>
+                                        <div class="st-selected-summary__meta">Volunteer filter applied</div>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="col-12 col-sm-auto">
+                                <button type="button"
+                                        class="st-btn st-btn--secondary w-100"
+                                        @onclick="ClearVolunteerFilter"
+                                        disabled="@(!CanClearVolunteerFilter || isLoading)">
+                                    @(selectedVolunteerFilter is null ? "Clear" : "Change")
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="st-muted small mt-2">
+                            Start typing at least 2 characters, then select a volunteer from the list.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="d-flex flex-column flex-sm-row justify-content-end gap-2 pt-2">
+                        <button type="button"
+                                class="st-btn st-btn--primary"
+                                @onclick="ApplyFiltersAsync"
+                                disabled="@isLoading">
+                            Apply Filters
+                        </button>
+
+                        <button type="button"
+                                class="st-btn st-btn--secondary"
+                                @onclick="ClearFiltersAsync"
+                                disabled="@(!CanResetFilters || isLoading)">
+                            Reset Filters
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="st-card">
+        <div class="st-card__header">
+            <div>
+                <h2 class="st-card-title">Volunteer Time Results</h2>
+                <p class="st-card-subtitle">@ResultsSubtitle</p>
+            </div>
+        </div>
+
+        <div class="st-card__body">
+            @if (isLoading)
+            {
+                <div class="st-alert st-alert--info" role="status">
+                    Loading volunteer time results...
+                </div>
+            }
+            else if (!hasLoadedReport)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">Report not loaded</span>
+                    Apply the filters to load volunteer time results.
+                </div>
+            }
+            else if (reportItems.Count == 0)
+            {
+                <div class="st-empty">
+                    <span class="st-empty__title">No volunteer time records found</span>
+                    Try a different month or volunteer filter.
+                </div>
+            }
+            else
+            {
+                <div class="row g-4">
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Reporting Period</span>
+                                    <div class="fs-4 fw-semibold">@ReportMonthName @reportYear</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Month and year currently loaded for this report.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Volunteer Scope</span>
+                                    <div class="fs-4 fw-semibold">@LoadedVolunteerScopeDisplayName</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Current volunteer scope used for the loaded report.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Total Hours</span>
+                                    <div class="fs-2 fw-bold">@TotalHoursWorked.ToString("0.##")</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Combined volunteer hours in the loaded result set.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="st-card h-100">
+                            <div class="st-card__body">
+                                <div class="d-flex flex-column gap-2">
+                                    <span class="st-label mb-0">Average Hours per Repair</span>
+                                    <div class="fs-2 fw-bold">@OverallAverageHoursPerRepair.ToString("0.##")</div>
+                                    <p class="st-page-subtitle mb-0">
+                                        Average volunteer time per repair in the loaded result set.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="st-card mt-4">
+                    <div class="st-card__body">
+                        <div class="row g-3 align-items-center">
+                            <div class="col-12 col-lg-8">
+                                <h3 class="st-card-title mb-2">Summary</h3>
+                                <p class="mb-0 text-muted">
+                                    @SummaryText
+                                </p>
+                            </div>
+                            <div class="col-12 col-lg-4">
+                                <div class="d-flex justify-content-lg-end">
+                                    <span class="st-inline-status st-inline-status--info">
+                                        Reporting period loaded
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="st-card mt-4">
+                    <div class="st-card__header">
+                        <div>
+                            <h3 class="st-card-title">Volunteer Time Breakdown</h3>
+                            <p class="st-card-subtitle">
+                                Repairs worked on, total hours, and average hours per repair for the loaded result set.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body p-0">
+                        <div class="st-table-shell">
+                            <div class="table-responsive">
+                                <table class="st-table align-middle mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Volunteer</th>
+                                            <th class="text-end">Repairs Worked On</th>
+                                            <th class="text-end">Total Hours</th>
+                                            <th class="text-end">Average Hours per Repair</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in reportItems)
+                                        {
+                                            <tr>
+                                                <td>@item.VolunteerName</td>
+                                                <td class="text-end">@item.RepairCount</td>
+                                                <td class="text-end">@item.TotalHours.ToString("0.##")</td>
+                                                <td class="text-end">@item.AverageHoursPerRepair.ToString("0.##")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // Stores the final report rows shown in the results table.
+    private List<VolunteerTimeReportItemViewModel> reportItems = new();
+
+    // Stores the available selectable volunteers for the optional filter picker.
+    private List<ApplicationUserOptionViewModel> volunteerOptions = new();
+
+    // Stores the current filtered dropdown results for the volunteer filter search.
+    private List<ApplicationUserOptionViewModel> volunteerFilterSearchResults = new();
+
+    // Stores the currently selected volunteer in the filter UI.
+    private ApplicationUserOptionViewModel? selectedVolunteerFilter;
+
+    // Stores the text entered into the volunteer filter search input.
+    private string volunteerFilterSearchTerm = string.Empty;
+
+    // Stores the currently selected volunteer ID used by the filter UI.
+    private string selectedVolunteerUserId = string.Empty;
+
+    // Stores a page-level error message if loading fails.
+    private string? errorMessage;
+
+    // Tracks whether the page is currently loading report data.
+    private bool isLoading = true;
+
+    // Controls whether the custom volunteer autocomplete dropdown is visible.
+    private bool isVolunteerFilterDropdownOpen;
+
+    // Stores the selected year in the filter UI.
+    private int selectedYear = DateTime.Today.Year;
+
+    // Stores the selected month in the filter UI.
+    private int selectedMonth = DateTime.Today.Month;
+
+    // Stores the year for the report that has actually been loaded.
+    private int reportYear = DateTime.Today.Year;
+
+    // Stores the month for the report that has actually been loaded.
+    private int reportMonth = DateTime.Today.Month;
+
+    // Stores the volunteer ID for the report that has actually been loaded.
+    private string reportVolunteerUserId = string.Empty;
+
+    // Stores the volunteer display name for the report that has actually been loaded.
+    private string reportVolunteerDisplayName = string.Empty;
+
+    // Tracks whether at least one report load has completed successfully.
+    private bool hasLoadedReport;
+
+    // Controls whether the volunteer clear/change button should be enabled.
+    private bool CanClearVolunteerFilter =>
+        !string.IsNullOrWhiteSpace(volunteerFilterSearchTerm) || selectedVolunteerFilter is not null;
+
+    // Controls whether Reset Filters should be enabled.
+    private bool CanResetFilters =>
+        selectedYear != DateTime.Today.Year
+        || selectedMonth != DateTime.Today.Month
+        || !string.IsNullOrWhiteSpace(selectedVolunteerUserId)
+        || !string.IsNullOrWhiteSpace(volunteerFilterSearchTerm)
+        || hasLoadedReport;
+
+    // Returns the year options shown in the year dropdown.
+    private IEnumerable<int> AvailableYears => Enumerable.Range(DateTime.Today.Year - 2, 5);
+
+    // Returns the month options shown in the custom month dropdown.
+    private IReadOnlyDictionary<string, string> MonthOptions =>
+        Enumerable.Range(1, 12)
+            .ToDictionary(
+                month => month.ToString(CultureInfo.InvariantCulture),
+                month => CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(month));
+
+    // Returns the year options shown in the custom year dropdown.
+    private IReadOnlyDictionary<string, string> YearOptions =>
+        AvailableYears.ToDictionary(
+            year => year.ToString(CultureInfo.InvariantCulture),
+            year => year.ToString(CultureInfo.InvariantCulture));
+
+    // Returns the selected month as a string for the custom dropdown.
+    private string SelectedMonthValue => selectedMonth.ToString(CultureInfo.InvariantCulture);
+
+    // Returns the selected year as a string for the custom dropdown.
+    private string SelectedYearValue => selectedYear.ToString(CultureInfo.InvariantCulture);
+
+    // Returns the month name for the loaded report period.
+    private string ReportMonthName => CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(reportMonth);
+
+    // Returns the display text for the loaded volunteer scope.
+    private string LoadedVolunteerScopeDisplayName =>
+        string.IsNullOrWhiteSpace(reportVolunteerUserId)
+            ? "All Volunteers"
+            : reportVolunteerDisplayName;
+
+    // Returns the count of volunteers shown in the loaded result set.
+    private int VolunteersShownCount =>
+        reportItems
+            .Where(item => !string.IsNullOrWhiteSpace(item.VolunteerName))
+            .Select(item => item.VolunteerName.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+
+    // Returns the total number of repairs across the loaded result set.
+    private int TotalRepairsWorkedOn => reportItems.Sum(item => item.RepairCount);
+
+    // Returns the total volunteer hours across the loaded result set.
+    private decimal TotalHoursWorked => reportItems.Sum(item => item.TotalHours);
+
+    // Returns the overall average hours per repair across the loaded result set.
+    private decimal OverallAverageHoursPerRepair =>
+        TotalRepairsWorkedOn == 0 ? 0 : TotalHoursWorked / TotalRepairsWorkedOn;
+
+    // Returns the results subtitle shown in the results card header.
+    private string ResultsSubtitle =>
+        !hasLoadedReport
+            ? "Volunteer hours and average repair time will appear here after the report loads."
+            : string.IsNullOrWhiteSpace(reportVolunteerUserId)
+                ? reportItems.Count == 0
+                    ? $"No volunteer time data was found for {ReportMonthName} {reportYear}."
+                    : $"Showing volunteer hours and average repair time for {ReportMonthName} {reportYear}."
+                : reportItems.Count == 0
+                    ? $"No volunteer time data was found for {reportVolunteerDisplayName} in {ReportMonthName} {reportYear}."
+                    : $"Showing volunteer hours and average repair time for {reportVolunteerDisplayName} in {ReportMonthName} {reportYear}.";
+
+    // Returns the summary sentence shown below the cards.
+    private string SummaryText =>
+        string.IsNullOrWhiteSpace(reportVolunteerUserId)
+            ? $"In {ReportMonthName} {reportYear}, the report shows {VolunteersShownCount} {(VolunteersShownCount == 1 ? "volunteer" : "volunteers")} working on {TotalRepairsWorkedOn} {(TotalRepairsWorkedOn == 1 ? "repair" : "repairs")} for a combined total of {TotalHoursWorked:0.##} hours, averaging {OverallAverageHoursPerRepair:0.##} hours per repair."
+            : $"In {ReportMonthName} {reportYear}, {reportVolunteerDisplayName} worked on {TotalRepairsWorkedOn} {(TotalRepairsWorkedOn == 1 ? "repair" : "repairs")} for a total of {TotalHoursWorked:0.##} hours, averaging {OverallAverageHoursPerRepair:0.##} hours per repair.";
+
+    // Runs automatically when the page first loads.
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Loads the available volunteers used by the optional filter picker.
+            volunteerOptions = await VolunteerWorkService.GetAvailableRepairVolunteersAsync();
+
+            // Loads the initial report results for the current month.
+            await LoadReportAsync();
+        }
+        catch
+        {
+            // Stores a friendly error message if the page cannot be loaded.
+            errorMessage = "The volunteer time report page could not be loaded. Please refresh the page and try again.";
+            reportItems = new List<VolunteerTimeReportItemViewModel>();
+            isLoading = false;
+            hasLoadedReport = false;
+        }
+    }
+
+    // Stores the selected month from the custom dropdown safely.
+    private Task OnSelectedMonthChangedAsync(string value)
+    {
+        if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedMonth)
+            && parsedMonth >= 1
+            && parsedMonth <= 12)
+        {
+            selectedMonth = parsedMonth;
+            errorMessage = null;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    // Stores the selected year from the custom dropdown safely.
+    private Task OnSelectedYearChangedAsync(string value)
+    {
+        if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedYear))
+        {
+            selectedYear = parsedYear;
+            errorMessage = null;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    // Loads the report rows using the selected month and optional volunteer filter.
+    private async Task LoadReportAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            // Requests the report rows for the selected reporting period and optional volunteer scope.
+            var loadedItems = await VolunteerWorkService.GetVolunteerTimeReportAsync(
+                selectedYear,
+                selectedMonth,
+                selectedVolunteerUserId);
+
+            // Stores the loaded results and the exact scope they belong to.
+            reportItems = loadedItems;
+            reportYear = selectedYear;
+            reportMonth = selectedMonth;
+            reportVolunteerUserId = selectedVolunteerUserId;
+            reportVolunteerDisplayName = selectedVolunteerFilter?.DisplayName ?? string.Empty;
+            hasLoadedReport = true;
+        }
+        catch
+        {
+            errorMessage = "The volunteer time report results could not be loaded. Please try again.";
+
+            if (!hasLoadedReport)
+            {
+                reportItems = new List<VolunteerTimeReportItemViewModel>();
+            }
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    // Applies the selected filters and reloads the report results.
+    private async Task ApplyFiltersAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(volunteerFilterSearchTerm) && selectedVolunteerFilter is null)
+        {
+            errorMessage = "Please select a valid volunteer from the list, or clear the volunteer filter.";
+            return;
+        }
+
+        errorMessage = null;
+        await LoadReportAsync();
+    }
+
+    // Resets all filters back to their default values and reloads the report results.
+    private async Task ClearFiltersAsync()
+    {
+        selectedYear = DateTime.Today.Year;
+        selectedMonth = DateTime.Today.Month;
+        ClearVolunteerFilter();
+        await LoadReportAsync();
+    }
+
+    // Runs when the user types in the volunteer filter search box and updates the autocomplete results.
+    private Task HandleVolunteerFilterInput(ChangeEventArgs e)
+    {
+        volunteerFilterSearchTerm = e.Value?.ToString() ?? string.Empty;
+        errorMessage = null;
+        selectedVolunteerFilter = null;
+        selectedVolunteerUserId = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(volunteerFilterSearchTerm) || volunteerFilterSearchTerm.Trim().Length < 2)
+        {
+            volunteerFilterSearchResults.Clear();
+            isVolunteerFilterDropdownOpen = false;
+            return Task.CompletedTask;
+        }
+
+        volunteerFilterSearchResults = volunteerOptions
+            .Where(option => option.DisplayName.Contains(volunteerFilterSearchTerm.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Take(8)
+            .ToList();
+
+        isVolunteerFilterDropdownOpen = volunteerFilterSearchResults.Any();
+        return Task.CompletedTask;
+    }
+
+    // Applies the chosen volunteer to the filter state.
+    private void SelectVolunteerFilter(ApplicationUserOptionViewModel volunteer)
+    {
+        selectedVolunteerFilter = volunteer;
+        selectedVolunteerUserId = volunteer.UserId;
+        volunteerFilterSearchTerm = volunteer.DisplayName;
+        volunteerFilterSearchResults.Clear();
+        isVolunteerFilterDropdownOpen = false;
+        errorMessage = null;
+    }
+
+    // Clears the volunteer filter search state and removes any current volunteer filter.
+    private void ClearVolunteerFilter()
+    {
+        volunteerFilterSearchTerm = string.Empty;
+        volunteerFilterSearchResults.Clear();
+        selectedVolunteerFilter = null;
+        selectedVolunteerUserId = string.Empty;
+        isVolunteerFilterDropdownOpen = false;
+        errorMessage = null;
+    }
+
+    // Reopens the volunteer autocomplete dropdown when the input gains focus and results still exist.
+    private void HandleVolunteerFilterFocus()
+    {
+        if (volunteerFilterSearchResults.Any())
+        {
+            isVolunteerFilterDropdownOpen = true;
+        }
+    }
+
+    // Closes the volunteer autocomplete dropdown shortly after the input loses focus.
+    private async Task HandleVolunteerFilterBlur()
+    {
+        await Task.Delay(150);
+        isVolunteerFilterDropdownOpen = false;
+    }
+}

@@ -1,0 +1,319 @@
+﻿@page "/vehicles/edit/{vehicleId:int}"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Components
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@inject IVehicleService VehicleService
+@inject IMotoristService MotoristService
+@inject NavigationManager NavigationManager
+@rendermode InteractiveServer
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.Enums
+
+<PageTitle>Edit Vehicle</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Edit Vehicle</h1>
+            <p class="st-page-subtitle">Update an existing vehicle record and review its linked owner.</p>
+        </div>
+
+        @if (!isLoading && model.VehicleId != 0)
+        {
+            <div class="st-page-actions">
+                <a href="@($"/vehicles/details/{model.VehicleId}")" class="st-btn st-btn--secondary">Back to Details</a>
+            </div>
+        }
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="st-alert st-alert--info" role="status">
+            Loading vehicle details...
+        </div>
+    }
+    else if (model.VehicleId == 0 || model.MotoristId == 0)
+    {
+        <div class="st-alert st-alert--warning" role="alert">
+            The requested vehicle could not be found.
+        </div>
+    }
+    else
+    {
+        <EditForm Model="model" OnValidSubmit="HandleValidSubmit" FormName="VehicleEdit">
+            <DataAnnotationsValidator />
+
+            <fieldset disabled="@isSaving" aria-busy="@isSaving" class="border-0 p-0 m-0">
+                <div class="st-stack-lg">
+                    @if (selectedMotorist is not null)
+                    {
+                        <div class="st-card st-card--allow-overflow">
+                            <div class="st-card__header">
+                                <div>
+                                    <h2 class="st-card-title">Linked Owner</h2>
+                                    <p class="st-card-subtitle">This vehicle is currently assigned to the following motorist.</p>
+                                </div>
+                            </div>
+
+                            <div class="st-card__body">
+                                <div class="row g-4 align-items-start">
+                                    <div class="col-12 col-lg-8">
+                                        <div class="st-selected-summary">
+                                            <div class="st-selected-summary__title">
+                                                @selectedMotorist.FirstName @selectedMotorist.LastName
+                                            </div>
+                                            <div class="st-selected-summary__meta">
+                                                @(string.IsNullOrWhiteSpace(selectedMotorist.Email) ? "No email" : selectedMotorist.Email)
+                                                ·
+                                                @(string.IsNullOrWhiteSpace(selectedMotorist.PhoneNumber) ? "No phone" : selectedMotorist.PhoneNumber)
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12 col-lg-4">
+                                        <div class="st-inline-status st-inline-status--info">
+                                            <strong>Linked motorist</strong>
+                                            <span>@selectedMotorist.FirstName @selectedMotorist.LastName</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="st-card">
+                        <div class="st-card__header">
+                            <div>
+                                <h2 class="st-card-title">Vehicle Details</h2>
+                                <p class="st-card-subtitle">Review and update the stored vehicle information.</p>
+                            </div>
+                        </div>
+
+                        <div class="st-card__body">
+                            @if (!string.IsNullOrWhiteSpace(errorMessage))
+                            {
+                                <div class="st-alert st-alert--danger mb-3" role="alert" aria-live="polite">
+                                    @errorMessage
+                                </div>
+                            }
+
+                            <div class="row g-4">
+                                <div class="col-12 col-md-6">
+                                    <div class="st-field mb-0">
+                                        <label for="registration-number" class="st-label">Registration Number</label>
+                                        <InputText id="registration-number" class="st-input" @bind-Value="model.RegistrationNumber" />
+                                        <ValidationMessage For="() => model.RegistrationNumber" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <div class="st-field mb-0">
+                                        <label for="make" class="st-label">Make</label>
+                                        <InputText id="make" class="st-input" @bind-Value="model.Make" />
+                                        <ValidationMessage For="() => model.Make" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <div class="st-field mb-0">
+                                        <label for="model" class="st-label">Model</label>
+                                        <InputText id="model" class="st-input" @bind-Value="model.Model" />
+                                        <ValidationMessage For="() => model.Model" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <div class="st-field mb-0">
+                                        <label for="year" class="st-label">Year</label>
+                                        <InputNumber id="year" class="st-input" @bind-Value="model.Year" />
+                                        <ValidationMessage For="() => model.Year" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="st-field mb-0">
+                                        <label for="vehicle-type-trigger" class="st-label">Vehicle Type</label>
+
+                                        <div class="st-dropdown">
+                                            <button id="vehicle-type-trigger"
+                                                    type="button"
+                                                    class="st-select st-dropdown__trigger"
+                                                    @onclick="ToggleVehicleTypeDropdown"
+                                                    aria-expanded="@isVehicleTypeDropdownOpen">
+                                                <span>@SelectedVehicleTypeText</span>
+                                                <span class="st-dropdown__chevron">▾</span>
+                                            </button>
+
+                                            @if (isVehicleTypeDropdownOpen)
+                                            {
+                                                <button type="button"
+                                                        class="st-dropdown__backdrop"
+                                                        @onclick="CloseVehicleTypeDropdown"
+                                                        aria-label="Close vehicle type menu"></button>
+
+                                                <div class="st-dropdown__menu">
+                                                    @foreach (var vehicleType in Enum.GetValues<VehicleType>())
+                                                    {
+                                                        <button type="button"
+                                                                class="st-dropdown__item"
+                                                                @onclick="() => SelectVehicleType(vehicleType)">
+                                                            @vehicleType
+                                                        </button>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+
+                                        <ValidationMessage For="() => model.VehicleType" class="validation-message" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                                <button type="button" class="st-btn st-btn--secondary" @onclick="GoBack">
+                                    Cancel
+                                </button>
+
+                                <button type="submit" class="st-btn st-btn--primary" disabled="@isSaving">
+                                    @(isSaving ? "Saving Changes..." : "Save Changes")
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </fieldset>
+        </EditForm>
+    }
+</div>
+
+@code {
+    // Receives the selected vehicle ID from the route.
+    [Parameter]
+    public int VehicleId { get; set; }
+
+    // Stores the form model bound to the vehicle edit page.
+    private VehicleEditViewModel model = new();
+
+    // Stores the motorist currently linked to this vehicle for summary display.
+    private Motorist? selectedMotorist;
+
+    // Stores a page-level error message for load or save failures.
+    private string? errorMessage;
+
+    // Tracks whether the page is currently loading vehicle data.
+    private bool isLoading = true;
+
+    // Tracks whether the form is currently saving changes.
+    private bool isSaving;
+
+    // Tracks whether the custom vehicle type dropdown is open.
+    private bool isVehicleTypeDropdownOpen;
+
+    // Shows the currently selected vehicle type as text in the custom dropdown trigger.
+    private string SelectedVehicleTypeText => model.VehicleType.ToString();
+
+    // Opens or closes the custom vehicle type dropdown.
+    private void ToggleVehicleTypeDropdown()
+    {
+        isVehicleTypeDropdownOpen = !isVehicleTypeDropdownOpen;
+    }
+
+    // Applies the chosen vehicle type and closes the dropdown.
+    private void SelectVehicleType(VehicleType vehicleType)
+    {
+        model.VehicleType = vehicleType;
+        isVehicleTypeDropdownOpen = false;
+        errorMessage = null;
+    }
+
+    // Closes the custom vehicle type dropdown.
+    private void CloseVehicleTypeDropdown()
+    {
+        isVehicleTypeDropdownOpen = false;
+    }
+
+    // Saves the edited vehicle and returns the user to the details page.
+    private async Task HandleValidSubmit()
+    {
+        // Stops the save if a save is already in progress.
+        if (isSaving)
+        {
+            return;
+        }
+
+        errorMessage = null;
+        isSaving = true;
+
+        try
+        {
+            await VehicleService.UpdateVehicleAsync(model);
+            NavigationManager.NavigateTo($"/vehicles/details/{model.VehicleId}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch
+        {
+            errorMessage = "The vehicle could not be updated. Please try again.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    // Returns the user to the vehicle details page.
+    private void GoBack()
+    {
+        NavigationManager.NavigateTo($"/vehicles/details/{model.VehicleId}");
+    }
+
+    // Loads the selected vehicle whenever the route parameter changes.
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        isSaving = false;
+        errorMessage = null;
+        isVehicleTypeDropdownOpen = false;
+
+        model = new VehicleEditViewModel();
+        selectedMotorist = null;
+
+        try
+        {
+            var vehicle = await VehicleService.GetVehicleByIdAsync(VehicleId);
+
+            if (vehicle is null)
+            {
+                errorMessage = "The requested vehicle could not be found.";
+                return;
+            }
+
+            selectedMotorist = vehicle.Motorist;
+
+            model = new VehicleEditViewModel
+            {
+                VehicleId = vehicle.VehicleId,
+                RegistrationNumber = vehicle.RegistrationNumber,
+                Make = vehicle.Make,
+                Model = vehicle.Model,
+                Year = vehicle.Year,
+                VehicleType = vehicle.VehicleType,
+                MotoristId = vehicle.MotoristId
+            };
+        }
+        catch
+        {
+            errorMessage = "The requested vehicle could not be loaded.";
+            model = new VehicleEditViewModel();
+            selectedMotorist = null;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

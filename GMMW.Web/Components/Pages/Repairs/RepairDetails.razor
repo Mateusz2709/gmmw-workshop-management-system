@@ -1,0 +1,390 @@
+﻿@page "/repairs/details/{RepairId:int}"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.Enums
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IRepairService RepairService
+@inject IRepairPartService RepairPartService
+
+<PageTitle>Repair Details</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Repair Details</h1>
+            <p class="st-page-subtitle">
+                Review the selected repair record, linked vehicle information, and owner contact details.
+            </p>
+        </div>
+
+        @if (!isLoading && repair is not null)
+        {
+            <div class="st-page-actions">
+                <a href="@BackToRepairHistoryUrl" class="st-btn st-btn--secondary">Back to Repair History</a>
+
+                @if (CanEditRepair)
+                {
+                    <a href="@($"/repairs/edit/{repair.RepairId}")" class="st-btn st-btn--primary">Edit Repair</a>
+                }
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="st-alert st-alert--info" role="status">
+            Loading repair details...
+        </div>
+    }
+    else if (repair is null)
+    {
+        <div class="st-alert st-alert--warning" role="alert">
+            The selected repair could not be found.
+        </div>
+    }
+    else
+    {
+        @if (repair.RepairStatus == RepairStatus.Completed)
+        {
+            <div class="st-alert st-alert--info" role="status">
+                This repair is completed. The record can still be reviewed here, but normal editing is no longer available.
+            </div>
+        }
+
+        <div class="row g-4">
+            <div class="col-12 col-xl-5">
+                <div class="st-card st-detail-card h-100">
+                    <div class="st-card__body">
+                        <div class="st-detail-card__heading">
+                            <div class="st-detail-card__icon">R</div>
+                            <div>
+                                <h2 class="st-section-title mb-1">Repair Summary</h2>
+                                <p class="st-card-subtitle mb-0">
+                                    Core information stored for this repair record.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-detail-list">
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Repair ID</div>
+                                <div class="st-detail-list__value">@repair.RepairId</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Repair Date</div>
+                                <div class="st-detail-list__value">@repair.RepairDate.ToString("dd/MM/yyyy")</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Status</div>
+                                <div class="st-detail-list__value">
+                                    <span class="@RepairStatusClass">@repair.RepairStatus</span>
+                                </div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Total Cost</div>
+                                <div class="st-detail-list__value">@repair.TotalCost.ToString("C")</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-7">
+                <div class="st-card st-detail-card h-100">
+                    <div class="st-card__body">
+                        <div class="st-detail-card__heading">
+                            <div class="st-detail-card__icon">V</div>
+                            <div>
+                                <h2 class="st-section-title mb-1">Vehicle and Owner</h2>
+                                <p class="st-card-subtitle mb-0">
+                                    Vehicle context and owner contact details linked to this repair.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-detail-list">
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Registration</div>
+                                <div class="st-detail-list__value">@repair.Vehicle.RegistrationNumber</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Type</div>
+                                <div class="st-detail-list__value">@repair.Vehicle.VehicleType</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Make / Model</div>
+                                <div class="st-detail-list__value">@repair.Vehicle.Make @repair.Vehicle.Model</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Year</div>
+                                <div class="st-detail-list__value">@(repair.Vehicle.Year?.ToString() ?? "—")</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Owner</div>
+                                <div class="st-detail-list__value">@repair.Vehicle.Motorist.FirstName @repair.Vehicle.Motorist.LastName</div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Email</div>
+                                <div class="st-detail-list__value">
+                                    @(string.IsNullOrWhiteSpace(repair.Vehicle.Motorist.Email) ? "—" : repair.Vehicle.Motorist.Email)
+                                </div>
+                            </div>
+
+                            <div class="st-detail-list__row">
+                                <div class="st-detail-list__label">Phone</div>
+                                <div class="st-detail-list__value">
+                                    @(string.IsNullOrWhiteSpace(repair.Vehicle.Motorist.PhoneNumber) ? "—" : repair.Vehicle.Motorist.PhoneNumber)
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="st-card">
+            <div class="st-card__header">
+                <div>
+                    <h2 class="st-card-title">Repair Notes</h2>
+                    <p class="st-card-subtitle">
+                        Review the reported fault and the recorded repair work for this job.
+                    </p>
+                </div>
+            </div>
+
+            <div class="st-card__body">
+                <div class="row g-4">
+                    <div class="col-12 col-xl-6">
+                        <div class="h-100 p-4 border rounded-4 st-surface-soft">
+                            <div class="st-detail-list__label mb-2">Fault Description</div>
+                            <div class="mb-0">
+                                @(string.IsNullOrWhiteSpace(repair.FaultDescription) ? "—" : repair.FaultDescription)
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-xl-6">
+                        <div class="h-100 p-4 border rounded-4 st-surface-soft">
+                            <div class="st-detail-list__label mb-2">Work Carried Out</div>
+                            <div class="mb-0">
+                                @(string.IsNullOrWhiteSpace(repair.WorkCarriedOut) ? "—" : repair.WorkCarriedOut)
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-12 col-xl-6">
+                <div class="st-card h-100">
+                    <div class="st-card__header">
+                        <div>
+                            <h2 class="st-card-title">Used Parts</h2>
+                            <p class="st-card-subtitle">
+                                Parts linked to this repair and the stored repair cost summary.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        @if (repairParts.Count == 0)
+                        {
+                            <div class="st-empty">
+                                <span class="st-empty__title">No parts recorded yet</span>
+                                No parts have been linked to this repair.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="st-inline-status st-inline-status--info mb-3">
+                                Total repair cost: @repair.TotalCost.ToString("C")
+                            </div>
+
+                            <div class="st-table-shell">
+                                <div class="table-responsive">
+                                    <table class="st-table align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Part Name</th>
+                                                <th>Type</th>
+                                                <th>Quantity</th>
+                                                <th>Unit Cost</th>
+                                                <th>Line Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var part in repairParts)
+                                            {
+                                                <tr>
+                                                    <td>@part.PartName</td>
+                                                    <td>@part.PartType</td>
+                                                    <td>@part.Quantity</td>
+                                                    <td>@part.UnitCost.ToString("C")</td>
+                                                    <td>@part.LineTotal.ToString("C")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-6">
+                <div class="st-card h-100">
+                    <div class="st-card__header">
+                        <div>
+                            <h2 class="st-card-title">Assigned Volunteers</h2>
+                            <p class="st-card-subtitle">
+                                Volunteers linked to this repair, including recorded hours and notes.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        @if (repair.RepairVolunteerAssignments is null || repair.RepairVolunteerAssignments.Count == 0)
+                        {
+                            <div class="st-empty">
+                                <span class="st-empty__title">No volunteers assigned yet</span>
+                                No volunteer assignments have been recorded for this repair.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="st-table-shell">
+                                <div class="table-responsive">
+                                    <table class="st-table align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Volunteer</th>
+                                                <th>Email</th>
+                                                <th>Hours Spent</th>
+                                                <th>Notes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var assignment in OrderedVolunteerAssignments)
+                                            {
+                                                <tr>
+                                                    <td>@assignment.ApplicationUser.FullName</td>
+                                                    <td>
+                                                        @(string.IsNullOrWhiteSpace(assignment.ApplicationUser.Email)
+                                                            ? "—"
+                                                            : assignment.ApplicationUser.Email)
+                                                    </td>
+                                                    <td>@assignment.HoursSpent.ToString("0.##")</td>
+                                                    <td>
+                                                        @(string.IsNullOrWhiteSpace(assignment.Notes)
+                                                            ? "—"
+                                                            : assignment.Notes)
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    // Receives the selected repair ID from the route.
+    [Parameter]
+    public int RepairId { get; set; }
+
+    // Stores the loaded repair record shown on the page.
+    private Repair? repair;
+
+    // Stores a page-level error message if loading fails.
+    private string? errorMessage;
+
+    // Tracks whether the page is still loading its data.
+    private bool isLoading = true;
+
+    // Stores the linked repair-part rows shown in the Used Parts section.
+    private List<RepairPart> repairParts = new();
+
+    // Builds the correct repair-history return link once the repair has loaded.
+    private string BackToRepairHistoryUrl =>
+        repair is null
+            ? "/repairs/search"
+            : $"/vehicles/details/{repair.VehicleId}/repairs";
+
+    // Returns true when the current repair is still editable in the normal workflow.
+    private bool CanEditRepair =>
+        repair is not null && repair.RepairStatus != RepairStatus.Completed;
+
+    // Returns a status-pill class that fits the current repair state.
+    private string RepairStatusClass =>
+        repair?.RepairStatus == RepairStatus.Completed
+            ? "st-inline-status st-inline-status--info"
+            : "st-inline-status st-inline-status--warning";
+
+    // Returns the volunteer assignments in a stable name order for display.
+    private IEnumerable<RepairVolunteerAssignment> OrderedVolunteerAssignments =>
+        repair?.RepairVolunteerAssignments?
+            .OrderBy(a => a.ApplicationUser.LastName)
+            .ThenBy(a => a.ApplicationUser.FirstName)
+        ?? Enumerable.Empty<RepairVolunteerAssignment>();
+
+    // Loads the selected repair and linked parts whenever the route parameter changes.
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        repair = null;
+        repairParts = new List<RepairPart>();
+
+        try
+        {
+            // Loads the selected repair together with its linked vehicle, owner, and volunteer context.
+            repair = await RepairService.GetRepairByIdAsync(RepairId);
+
+            // Loads the linked part rows for the Used Parts section.
+            repairParts = await RepairPartService.GetPartsByRepairIdAsync(RepairId);
+
+            // Stops early if the repair record does not exist.
+            if (repair is null)
+            {
+                errorMessage = "The selected repair could not be found.";
+                return;
+            }
+        }
+        catch
+        {
+            // Shows a friendly fallback message if the page data cannot be loaded.
+            errorMessage = "Repair details could not be loaded.";
+        }
+        finally
+        {
+            // Ends the loading state whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+}

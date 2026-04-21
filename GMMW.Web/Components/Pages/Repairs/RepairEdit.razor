@@ -1,0 +1,398 @@
+﻿@page "/repairs/edit/{RepairId:int}"
+@rendermode InteractiveServer
+@using GMMW.Web.Components.Shared
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Forms
+@using GMMW.Web.Models.Domain
+@using GMMW.Web.Models.Enums
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IRepairService RepairService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Edit Repair</PageTitle>
+
+<div class="st-stack-lg">
+    <div class="st-page-header">
+        <div class="st-page-header__copy">
+            <h1 class="st-page-title">Edit Repair</h1>
+            <p class="st-page-subtitle">
+                Update the repair record while keeping the linked vehicle and owner visible for context.
+            </p>
+        </div>
+
+        @if (!isLoading && repair is not null)
+        {
+            <div class="st-page-actions">
+                <a href="@($"/repairs/details/{RepairId}")" class="st-btn st-btn--secondary">Back to Details</a>
+                <a href="@($"/vehicles/details/{repair.VehicleId}/repairs")" class="st-btn st-btn--secondary">Back to Repair History</a>
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+            @errorMessage
+        </div>
+    }
+
+    @if (showValidationMessage && string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="st-alert st-alert--warning" role="alert">
+            Please correct the highlighted fields and try again.
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="st-alert st-alert--info" role="status">
+            Loading repair details...
+        </div>
+    }
+    else if (repair is null)
+    {
+        <div class="st-alert st-alert--warning" role="alert">
+            The selected repair could not be found.
+        </div>
+    }
+    else
+    {
+        @if (isReadOnly)
+        {
+            <div class="st-alert st-alert--warning" role="alert">
+                This repair is completed and can no longer be edited.
+            </div>
+        }
+
+        <div class="st-card st-detail-card">
+            <div class="st-card__body">
+                <div class="st-detail-card__heading">
+                    <div class="st-detail-card__icon">V</div>
+                    <div>
+                        <h2 class="st-section-title mb-1">Linked Vehicle and Owner</h2>
+                        <p class="st-card-subtitle mb-0">
+                            This repair stays linked to the vehicle and owner shown below.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="st-detail-list mt-4">
+                    <div class="st-detail-list__row">
+                        <div class="st-detail-list__label">Registration</div>
+                        <div class="st-detail-list__value">@repair.Vehicle.RegistrationNumber</div>
+                    </div>
+
+                    <div class="st-detail-list__row">
+                        <div class="st-detail-list__label">Type</div>
+                        <div class="st-detail-list__value">@repair.Vehicle.VehicleType</div>
+                    </div>
+
+                    <div class="st-detail-list__row">
+                        <div class="st-detail-list__label">Make / Model</div>
+                        <div class="st-detail-list__value">@repair.Vehicle.Make @repair.Vehicle.Model</div>
+                    </div>
+
+                    <div class="st-detail-list__row">
+                        <div class="st-detail-list__label">Owner</div>
+                        <div class="st-detail-list__value">@repair.Vehicle.Motorist.FirstName @repair.Vehicle.Motorist.LastName</div>
+                    </div>
+
+                    <div class="st-detail-list__row">
+                        <div class="st-detail-list__label">Email</div>
+                        <div class="st-detail-list__value">
+                            @(string.IsNullOrWhiteSpace(repair.Vehicle.Motorist.Email) ? "—" : repair.Vehicle.Motorist.Email)
+                        </div>
+                    </div>
+
+                    <div class="st-detail-list__row">
+                        <div class="st-detail-list__label">Phone</div>
+                        <div class="st-detail-list__value">
+                            @(string.IsNullOrWhiteSpace(repair.Vehicle.Motorist.PhoneNumber) ? "—" : repair.Vehicle.Motorist.PhoneNumber)
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="st-card st-card--allow-overflow">
+            <div class="st-card__header">
+                <div>
+                    <h2 class="st-card-title">Repair Details</h2>
+                    <p class="st-card-subtitle">
+                        Update the recorded repair information for this vehicle.
+                    </p>
+                </div>
+            </div>
+
+            <div class="st-card__body">
+                <EditForm Model="model"
+                          OnValidSubmit="HandleValidSubmit"
+                          OnInvalidSubmit="HandleInvalidSubmit"
+                          FormName="RepairEdit">
+                    <DataAnnotationsValidator />
+
+                    <fieldset disabled="@isSaving" aria-busy="@isSaving">
+                        <div class="row g-4">
+                            <div class="col-12 col-md-6">
+                                <StDatePicker Label="Repair Date"
+                                              Value="model.RepairDate"
+                                              ValueChanged="OnRepairDateChanged" />
+                                <ValidationMessage For="() => model.RepairDate" class="validation-message" />
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <div class="st-field mb-0">
+                                    <label for="repair-status-trigger" class="st-label">Repair Status</label>
+
+                                    <div class="st-dropdown">
+                                        <button id="repair-status-trigger"
+                                                type="button"
+                                                class="st-select st-dropdown__trigger"
+                                                @onclick="ToggleRepairStatusDropdown"
+                                                aria-expanded="@isRepairStatusDropdownOpen"
+                                                disabled="@isReadOnly">
+                                            <span>@SelectedRepairStatusText</span>
+                                            <span class="st-dropdown__chevron">▾</span>
+                                        </button>
+
+                                        @if (isRepairStatusDropdownOpen)
+                                        {
+                                            <button type="button"
+                                                    class="st-dropdown__backdrop"
+                                                    @onclick="CloseRepairStatusDropdown"
+                                                    aria-label="Close repair status menu"></button>
+
+                                            <div class="st-dropdown__menu">
+                                                @foreach (var repairStatus in Enum.GetValues<RepairStatus>())
+                                                {
+                                                    <button type="button"
+                                                            class="st-dropdown__item"
+                                                            @onclick="() => SelectRepairStatus(repairStatus)">
+                                                        @repairStatus
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+
+                                    <ValidationMessage For="() => model.RepairStatus" class="validation-message" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row g-4 mt-1">
+                            <div class="col-12">
+                                <div class="st-field mb-0">
+                                    <label for="fault-description" class="st-label">Fault Description</label>
+                                    <InputTextArea id="fault-description"
+                                                   class="st-textarea"
+                                                   rows="5"
+                                                   @bind-Value="model.FaultDescription"
+                                                   disabled="@isReadOnly" />
+                                    <ValidationMessage For="() => model.FaultDescription" class="validation-message" />
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="st-field mb-0">
+                                    <label for="work-carried-out" class="st-label">Work Carried Out</label>
+                                    <InputTextArea id="work-carried-out"
+                                                   class="st-textarea"
+                                                   rows="6"
+                                                   @bind-Value="model.WorkCarriedOut"
+                                                   disabled="@isReadOnly" />
+                                    <ValidationMessage For="() => model.WorkCarriedOut" class="validation-message" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                            <a href="@($"/repairs/details/{RepairId}")" class="st-btn st-btn--secondary">
+                                Cancel
+                            </a>
+
+                            @if (!isReadOnly)
+                            {
+                                <button type="submit" class="st-btn st-btn--primary" disabled="@isSaving">
+                                    @(isSaving ? "Saving Changes..." : "Save Changes")
+                                </button>
+                            }
+                        </div>
+                    </fieldset>
+                </EditForm>
+            </div>
+        </div>
+
+        <RepairPartEditor RepairId="RepairId" />
+
+        <RepairVolunteerAssignmentEditor RepairId="RepairId" />
+    }
+</div>
+
+@code {
+    // Receives the selected repair ID from the route.
+    [Parameter]
+    public int RepairId { get; set; }
+
+    // Stores the loaded repair record shown for context on the page.
+    private Repair? repair;
+
+    // Stores the edit form values bound to the page.
+    private RepairEditViewModel model { get; set; } = new();
+
+    // Stores a page-level error message for load or save failures.
+    private string? errorMessage;
+
+    // Shows one short top-level validation prompt instead of a full summary dump.
+    private bool showValidationMessage;
+
+    // Tracks whether the page is still loading its repair data.
+    private bool isLoading = true;
+
+    // Prevents duplicate submits while the repair update is saving.
+    private bool isSaving;
+
+    // Marks the repair as read-only when the record is already completed.
+    private bool isReadOnly;
+
+    // Controls whether the custom repair-status dropdown is open.
+    private bool isRepairStatusDropdownOpen;
+
+    // Returns the current repair-status text shown in the custom picker trigger.
+    private string SelectedRepairStatusText => model.RepairStatus.ToString();
+
+    // Loads the selected repair and copies its values into the edit model.
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        isSaving = false;
+        isReadOnly = false;
+        errorMessage = null;
+        showValidationMessage = false;
+        isRepairStatusDropdownOpen = false;
+        repair = null;
+
+        try
+        {
+            // Loads the selected repair together with the linked vehicle and owner context.
+            repair = await RepairService.GetRepairByIdAsync(RepairId);
+
+            // Stops early if the repair record does not exist.
+            if (repair is null)
+            {
+                errorMessage = "The selected repair could not be found.";
+                return;
+            }
+
+            // Copies the loaded repair values into the form model.
+            model.RepairId = repair.RepairId;
+            model.VehicleId = repair.VehicleId;
+            model.RepairDate = repair.RepairDate;
+            model.FaultDescription = repair.FaultDescription;
+            model.WorkCarriedOut = repair.WorkCarriedOut;
+            model.RepairStatus = repair.RepairStatus;
+
+            // Keeps completed repairs read-only in the normal workflow.
+            isReadOnly = repair.RepairStatus == RepairStatus.Completed;
+        }
+        catch
+        {
+            // Shows a friendly message if the repair details cannot be loaded.
+            errorMessage = "Repair details could not be loaded.";
+            repair = null;
+        }
+        finally
+        {
+            // Ends the loading state whether the request succeeded or failed.
+            isLoading = false;
+        }
+    }
+
+    // Runs only when the edit form passes validation.
+    private async Task HandleValidSubmit()
+    {
+        // Stops accidental double-submit while the save is already running.
+        if (isSaving)
+        {
+            return;
+        }
+
+        // Keeps completed repairs protected even if the button is somehow triggered.
+        if (isReadOnly)
+        {
+            errorMessage = "This repair is completed and can no longer be edited.";
+            return;
+        }
+
+        errorMessage = null;
+        showValidationMessage = false;
+        isSaving = true;
+
+        try
+        {
+            // Sends the updated repair values to the service layer.
+            await RepairService.UpdateRepairAsync(model);
+
+            // Returns to the repair details page after a successful update.
+            NavigationManager.NavigateTo($"/repairs/details/{RepairId}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Shows expected business-rule messages from the service layer.
+            errorMessage = ex.Message;
+        }
+        catch
+        {
+            // Shows a friendly fallback message for unexpected save failures.
+            errorMessage = "Repair details could not be saved.";
+        }
+        finally
+        {
+            // Re-enables the form whether the save succeeded or failed.
+            isSaving = false;
+        }
+    }
+
+    // Runs when the form is submitted but validation fails.
+    private void HandleInvalidSubmit(EditContext editContext)
+    {
+        errorMessage = null;
+        showValidationMessage = true;
+    }
+
+    // Opens or closes the custom repair-status picker when editing is allowed.
+    private void ToggleRepairStatusDropdown()
+    {
+        if (isReadOnly)
+        {
+            return;
+        }
+
+        isRepairStatusDropdownOpen = !isRepairStatusDropdownOpen;
+    }
+
+    // Applies the selected repair status to the edit model.
+    private void SelectRepairStatus(RepairStatus repairStatus)
+    {
+        model.RepairStatus = repairStatus;
+        isRepairStatusDropdownOpen = false;
+        showValidationMessage = false;
+    }
+
+    // Closes the repair-status dropdown without changing the current value.
+    private void CloseRepairStatusDropdown()
+    {
+        isRepairStatusDropdownOpen = false;
+    }
+
+    // Updates the repair date from the shared date picker.
+    private Task OnRepairDateChanged(DateTime? value)
+    {
+        model.RepairDate = value ?? DateTime.Today;
+        showValidationMessage = false;
+        return Task.CompletedTask;
+    }
+}

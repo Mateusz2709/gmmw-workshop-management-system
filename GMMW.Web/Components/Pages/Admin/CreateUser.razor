@@ -1,0 +1,267 @@
+﻿@page "/admin/users/create"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize(Roles = "SuperUser")]
+@inject IUserAdminService UserAdminService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Create User</PageTitle>
+
+<div class="row">
+    <div class="col-12 col-xl-10 col-xxl-9">
+        <div class="st-stack-lg">
+            <div class="st-page-header">
+                <div class="st-page-header__copy">
+                    <h1 class="st-page-title">Create User</h1>
+                    <p class="st-page-subtitle">
+                        Create a new internal account for workshop access and administration.
+                    </p>
+                </div>
+
+                <div class="st-page-actions">
+                    <a href="/admin" class="st-btn st-btn--secondary">Back to Users</a>
+                </div>
+            </div>
+
+            <EditForm Model="FormModel"
+                      OnValidSubmit="HandleValidSubmit"
+                      OnInvalidSubmit="HandleInvalidSubmit"
+                      FormName="CreateUser">
+                <DataAnnotationsValidator />
+
+                <div class="st-card st-card--allow-overflow">
+                    <div class="st-card__header">
+                        <div>
+                            <h2 class="st-card-title">User Details</h2>
+                            <p class="st-card-subtitle">
+                                New accounts are created as WorkshopUser by default. Roles can be adjusted later in the protected admin area.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="st-card__body">
+                        @if (!string.IsNullOrWhiteSpace(errorMessage))
+                        {
+                            <div class="st-alert st-alert--danger mb-3" role="alert" aria-live="polite">
+                                @errorMessage
+                            </div>
+                        }
+
+                        @if (showValidationMessage && string.IsNullOrWhiteSpace(errorMessage))
+                        {
+                            <div class="st-alert st-alert--warning mb-3" role="alert">
+                                Please correct the highlighted fields and try again.
+                            </div>
+                        }
+
+                        <fieldset disabled="@isSaving" aria-busy="@isSaving">
+                            <div class="row g-4">
+                                <div class="col-12 col-md-6">
+                                    <div class="st-field mb-0">
+                                        <label for="first-name" class="st-label">First Name</label>
+                                        <InputText id="first-name"
+                                                   class="st-input"
+                                                   autocomplete="given-name"
+                                                   @bind-Value="FormModel.FirstName" />
+                                        <ValidationMessage For="() => FormModel.FirstName" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <div class="st-field mb-0">
+                                        <label for="last-name" class="st-label">Last Name</label>
+                                        <InputText id="last-name"
+                                                   class="st-input"
+                                                   autocomplete="family-name"
+                                                   @bind-Value="FormModel.LastName" />
+                                        <ValidationMessage For="() => FormModel.LastName" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="st-field mb-0">
+                                        <label for="email" class="st-label">Email</label>
+                                        <InputText id="email"
+                                                   type="email"
+                                                   class="st-input"
+                                                   autocomplete="email"
+                                                   inputmode="email"
+                                                   @bind-Value="FormModel.Email" />
+                                        <ValidationMessage For="() => FormModel.Email" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <div class="st-field mb-0">
+                                        <label for="password" class="st-label">Password</label>
+                                        <InputText id="password"
+                                                   type="password"
+                                                   class="st-input"
+                                                   autocomplete="new-password"
+                                                   @bind-Value="FormModel.Password" />
+                                        <ValidationMessage For="() => FormModel.Password" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <div class="st-field mb-0">
+                                        <label for="confirm-password" class="st-label">Confirm Password</label>
+                                        <InputText id="confirm-password"
+                                                   type="password"
+                                                   class="st-input"
+                                                   autocomplete="new-password"
+                                                   @bind-Value="FormModel.ConfirmPassword" />
+                                        <ValidationMessage For="() => FormModel.ConfirmPassword" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="st-field mb-0">
+                                        <label for="account-status-trigger" class="st-label">Account Status</label>
+
+                                        <div class="st-dropdown">
+                                            <button id="account-status-trigger"
+                                                    type="button"
+                                                    class="st-select st-dropdown__trigger"
+                                                    @onclick="ToggleAccountStatusDropdown"
+                                                    aria-expanded="@isAccountStatusDropdownOpen"
+                                                    aria-haspopup="listbox">
+                                                <span>@SelectedAccountStatusText</span>
+                                                <span class="st-dropdown__chevron">▾</span>
+                                            </button>
+
+                                            @if (isAccountStatusDropdownOpen)
+                                            {
+                                                <button type="button"
+                                                        class="st-dropdown__backdrop"
+                                                        @onclick="CloseAccountStatusDropdown"
+                                                        aria-label="Close account status menu"></button>
+
+                                                <div class="st-dropdown__menu"
+                                                     role="listbox"
+                                                     aria-labelledby="account-status-trigger">
+                                                    <button type="button"
+                                                            class="st-dropdown__item"
+                                                            @onclick="() => SelectAccountStatus(true)">
+                                                        Active
+                                                    </button>
+
+                                                    <button type="button"
+                                                            class="st-dropdown__item"
+                                                            @onclick="() => SelectAccountStatus(false)">
+                                                        Disabled
+                                                    </button>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                            <button type="submit" class="st-btn st-btn--primary" disabled="@isSaving">
+                                @(isSaving ? "Creating User..." : "Create User")
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+</div>
+
+@code {
+    // Stores the posted form values for the create-user page.
+    [SupplyParameterFromForm(FormName = "CreateUser")]
+    private CreateUserViewModel? model { get; set; }
+
+    // Always provides a safe non-null model instance for rendering and form binding.
+    private CreateUserViewModel FormModel => model ??= new();
+
+    // Stores service-level or unexpected errors shown above the form.
+    private string? errorMessage;
+
+    // Shows one short validation prompt after an invalid submit.
+    private bool showValidationMessage;
+
+    // Locks the form while the save is running.
+    private bool isSaving;
+
+    // Controls the custom account-status dropdown state.
+    private bool isAccountStatusDropdownOpen;
+
+    // Shows the selected account status in the dropdown trigger.
+    private string SelectedAccountStatusText => FormModel.IsActive ? "Active" : "Disabled";
+
+    // Opens or closes the custom dropdown.
+    private void ToggleAccountStatusDropdown()
+    {
+        isAccountStatusDropdownOpen = !isAccountStatusDropdownOpen;
+    }
+
+    // Applies the selected status and closes the dropdown.
+    private void SelectAccountStatus(bool isActive)
+    {
+        FormModel.IsActive = isActive;
+        isAccountStatusDropdownOpen = false;
+    }
+
+    // Closes the dropdown when the backdrop is clicked.
+    private void CloseAccountStatusDropdown()
+    {
+        isAccountStatusDropdownOpen = false;
+    }
+
+    // Runs only after the form passes validation.
+    private async Task HandleValidSubmit()
+    {
+        // Prevents duplicate submits if the button is clicked again while saving.
+        if (isSaving)
+        {
+            return;
+        }
+
+        // Clears old messages before a fresh create attempt.
+        errorMessage = null;
+        showValidationMessage = false;
+        isAccountStatusDropdownOpen = false;
+        isSaving = true;
+
+        try
+        {
+            // Sends the validated model into the admin service.
+            await UserAdminService.CreateUserAsync(FormModel);
+
+            // Returns to the users page after a successful create.
+            NavigationManager.NavigateTo("/admin");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Shows expected business-rule errors from the service layer.
+            errorMessage = ex.Message;
+        }
+        catch
+        {
+            // Shows a fallback message for unexpected failures.
+            errorMessage = "Something went wrong while creating the user.";
+        }
+        finally
+        {
+            // Re-enables the form whether the operation succeeded or failed.
+            isSaving = false;
+        }
+    }
+
+    // Runs when submit happens but validation fails.
+    private void HandleInvalidSubmit(EditContext editContext)
+    {
+        // Keeps the top message short and leaves detailed errors next to each field.
+        errorMessage = null;
+        showValidationMessage = true;
+        isAccountStatusDropdownOpen = false;
+    }
+}

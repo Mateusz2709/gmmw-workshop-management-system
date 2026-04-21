@@ -1,0 +1,198 @@
+﻿@page "/motorists/create"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using GMMW.Web.Models.ViewModels
+@using GMMW.Web.Services.Interfaces
+@attribute [Authorize]
+@inject IMotoristService MotoristService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Register Motorist</PageTitle>
+
+<div class="row">
+    <div class="col-12 col-xl-9 col-xxl-8">
+        <div class="st-stack-lg">
+            <div class="st-page-header">
+                <div class="st-page-header__copy">
+                    <h1 class="st-page-title">Register Motorist</h1>
+                    <p class="st-page-subtitle">
+                        Add a new motorist record so it can be linked to vehicles, repairs, and workshop activity.
+                    </p>
+                </div>
+
+                <div class="st-page-actions">
+                    <a href="/motorists" class="st-btn st-btn--secondary">Back to Motorists</a>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="st-alert st-alert--danger" role="alert" aria-live="polite">
+                    @errorMessage
+                </div>
+            }
+
+            @if (showValidationMessage && string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="st-alert st-alert--warning" role="alert">
+                    Please correct the highlighted fields and try again.
+                </div>
+            }
+
+            <EditForm Model="FormModel"
+                      OnValidSubmit="HandleValidSubmit"
+                      OnInvalidSubmit="HandleInvalidSubmit"
+                      FormName="MotoristCreate">
+                <DataAnnotationsValidator />
+
+                <fieldset disabled="@isSaving" aria-busy="@isSaving">
+                    <div class="st-card st-card--allow-overflow">
+                        <div class="st-card__header">
+                            <div>
+                                <h2 class="st-card-title">Motorist Details</h2>
+                                <p class="st-card-subtitle">
+                                    Enter the core contact and address information for the new motorist.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="st-card__body">
+                            <div class="row g-4">
+                                <div class="col-12 col-md-6">
+                                    <div class="st-field mb-0">
+                                        <label for="first-name" class="st-label">First Name</label>
+                                        <InputText id="first-name"
+                                                   class="st-input"
+                                                   autocomplete="given-name"
+                                                   @bind-Value="FormModel.FirstName" />
+                                        <ValidationMessage For="() => FormModel.FirstName" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <div class="st-field mb-0">
+                                        <label for="last-name" class="st-label">Last Name</label>
+                                        <InputText id="last-name"
+                                                   class="st-input"
+                                                   autocomplete="family-name"
+                                                   @bind-Value="FormModel.LastName" />
+                                        <ValidationMessage For="() => FormModel.LastName" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="st-field mb-0">
+                                        <label for="email" class="st-label">Email</label>
+                                        <InputText id="email"
+                                                   type="email"
+                                                   class="st-input"
+                                                   autocomplete="email"
+                                                   inputmode="email"
+                                                   @bind-Value="FormModel.Email" />
+                                        <ValidationMessage For="() => FormModel.Email" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="st-field mb-0">
+                                        <label for="phone-number" class="st-label">Phone Number</label>
+                                        <InputText id="phone-number"
+                                                   type="tel"
+                                                   class="st-input"
+                                                   autocomplete="tel"
+                                                   inputmode="tel"
+                                                   @bind-Value="FormModel.PhoneNumber" />
+                                        <ValidationMessage For="() => FormModel.PhoneNumber" class="validation-message" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="st-field mb-0">
+                                        <label for="address" class="st-label">Address</label>
+                                        <InputTextArea id="address"
+                                                       class="st-textarea"
+                                                       autocomplete="street-address"
+                                                       @bind-Value="FormModel.Address" />
+                                        <ValidationMessage For="() => FormModel.Address" class="validation-message" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-column-reverse flex-sm-row justify-content-end gap-2 mt-4 pt-4 border-top">
+                                <button type="submit" class="st-btn st-btn--primary" disabled="@isSaving">
+                                    @(isSaving ? "Saving Motorist..." : "Save Motorist")
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </fieldset>
+            </EditForm>
+        </div>
+    </div>
+</div>
+
+@code {
+    // Stores a page-level error message so duplicate-email or save problems can be shown clearly.
+    private string? errorMessage;
+
+    // Shows one short top-level validation prompt instead of a full validation summary dump.
+    private bool showValidationMessage;
+
+    // Prevents duplicate submits and locks the form while saving.
+    private bool isSaving;
+
+    // Stores the form value supplied from the motorist create form post.
+    [SupplyParameterFromForm(FormName = "MotoristCreate")]
+    private MotoristCreateViewModel? model { get; set; }
+
+    // Always provides a safe non-null model instance for form binding and submission.
+    private MotoristCreateViewModel FormModel => model ??= new();
+
+    // Runs when the form passes Blazor validation and the user submits the create page.
+    private async Task HandleValidSubmit()
+    {
+        // Stops accidental double-submit while the save is already running.
+        if (isSaving)
+        {
+            return;
+        }
+
+        // Clears old messages before a fresh save attempt.
+        errorMessage = null;
+        showValidationMessage = false;
+        isSaving = true;
+
+        try
+        {
+            // Sends the validated form data to the service and gets back the new motorist ID.
+            var newMotoristId = await MotoristService.CreateMotoristAsync(FormModel);
+
+            // Redirects the user to the details page for the newly created motorist.
+            NavigationManager.NavigateTo($"/motorists/details/{newMotoristId}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Shows a friendly business-rule error, for example when the email already exists.
+            errorMessage = ex.Message;
+        }
+        catch
+        {
+            // Shows a fallback message for unexpected save failures.
+            errorMessage = "The motorist could not be saved. Please check the details and try again.";
+        }
+        finally
+        {
+            // Re-enables the form whether the save succeeded or failed.
+            isSaving = false;
+        }
+    }
+
+    // Runs when the form is submitted but validation fails.
+    private void HandleInvalidSubmit(EditContext editContext)
+    {
+        // Keeps the top message short and leaves detailed errors next to each field.
+        errorMessage = null;
+        showValidationMessage = true;
+    }
+}
