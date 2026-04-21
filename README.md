@@ -41,7 +41,23 @@ The application was designed to replace manual record-keeping with a structured 
 
 This project was developed as an academic university project to practise full-stack development, business rules, validation, reporting, role-based access, and consistent UI design across a larger application.
 
-## Status
+## Screenshots
 
-This is an active student project and is still being refined and improved.
+### Dashboard
+![Dashboard](docs/images/dashboard.png)
+
+### Vehicles
+![Vehicles](docs/images/vehicles.png)
+
+### Repairs
+![Repairs](docs/images/repairs.png)
+
+### Attendance
+![Attendance](docs/images/attendance.png)
+
+### Reports
+![Reports](docs/images/reports.png)
+
+### Admin
+![Admin](docs/images/admin.png)
 
